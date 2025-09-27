@@ -86,7 +86,7 @@ async def forward_user_msg(client: Client, message: Message):
 
     # Send confirmation to user (auto delete after 5 sec)
     conf_msg = await message.reply_text("✅ Your message has been successfully sent!")
-    await asyncio.sleep(5)
+    await asyncio.sleep(2)
     try:
         await conf_msg.delete()
     except:
