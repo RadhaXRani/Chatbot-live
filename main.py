@@ -55,7 +55,7 @@ async def start_cmd(client: Client, message: Message):
         await message.reply_text("Hello! Your message (text/media) will be sent to the admin.")
 
 # ====================
-# FORWARD USER → ADMIN + DELETE USER MSG (ALL MEDIA)
+# FORWARD USER → ADMIN + CONFIRMATION
 # ====================
 @app.on_message(filters.private & ~filters.user(OWNER_ID))
 async def forward_user_msg(client: Client, message: Message):
@@ -84,14 +84,16 @@ async def forward_user_msg(client: Client, message: Message):
     )
     await fwd.reply_text(info_text)
 
-    # Auto delete user message
+    # Send confirmation to user (auto delete after 5 sec)
+    conf_msg = await message.reply_text("✅ Your message has been successfully sent!")
+    await asyncio.sleep(5)
     try:
-        await message.delete()
+        await conf_msg.delete()
     except:
         pass
 
 # ====================
-# ADMIN REPLY → USER (ALL MEDIA)
+# ADMIN REPLY → USER (plain text only)
 # ====================
 @app.on_message(filters.private & filters.user(OWNER_ID) & filters.reply)
 async def reply_to_user(client: Client, message: Message):
@@ -107,16 +109,13 @@ async def reply_to_user(client: Client, message: Message):
         # Save admin reply in DB
         memory_col.insert_one({
             "user_id": user_id,
-            "admin_reply": message.text or "<media>",
-            "media_type": message.media.value if message.media else "text",
+            "admin_reply": message.text or "<text only>",
             "timestamp": datetime.utcnow()
         })
 
-        # Forward admin message (text or media)
-        if message.media:
-            await message.copy(user_id)
-        else:
-            await client.send_message(user_id, f"Admin: {message.text}")
+        # Send plain text to user
+        if message.text:
+            await client.send_message(user_id, message.text)
 
         await message.reply_text("Reply delivered.")
 
@@ -124,7 +123,7 @@ async def reply_to_user(client: Client, message: Message):
         await message.reply_text(f"Error: {e}")
 
 # ====================
-# BROADCAST (TEXT & MEDIA)
+# BROADCAST (text only)
 # ====================
 @app.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
 async def broadcast_cmd(client: Client, message: Message):
@@ -137,7 +136,7 @@ async def broadcast_cmd(client: Client, message: Message):
 
     for user in users:
         try:
-            await client.send_message(user["user_id"], f"Broadcast:\n{text}")
+            await client.send_message(user["user_id"], f"{text}")
             sent += 1
         except:
             failed += 1
