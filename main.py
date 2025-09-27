@@ -16,8 +16,6 @@ client = MongoClient(MONGO_URI)
 db = client["gemini_bot_db"]
 
 memory_col = db["memory"]
-mode_col = db["modes"]
-api_keys_col = db["api_keys"]
 user_profiles_col = db["user_profiles"]
 
 # ====================
@@ -28,11 +26,10 @@ app = Client(
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=BOT_TOKEN,
-    workers=100  # Render / Docker friendly
+    workers=100
 )
 
-# Dictionary to track clone bots
-clones = {}
+clones = {}  # track clones
 
 # ====================
 # START COMMAND
@@ -53,15 +50,12 @@ async def start_cmd(client: Client, message: Message):
     )
 
     if user.id == OWNER_ID:
-        await message.reply_text("👑 Admin Panel Ready!")
+        await message.reply_text("Admin Panel Ready!")
     else:
-        await message.reply_text(
-            "👋 Namaste! Yeh ek Livegram Style ChatBot hai.\n"
-            "Apka message directly Admin ko bhej diya jayega."
-        )
+        await message.reply_text("Hello! Your message (text/media) will be sent to the admin.")
 
 # ====================
-# FORWARD USER → ADMIN
+# FORWARD USER → ADMIN + DELETE USER MSG (ALL MEDIA)
 # ====================
 @app.on_message(filters.private & ~filters.user(OWNER_ID))
 async def forward_user_msg(client: Client, message: Message):
@@ -70,10 +64,11 @@ async def forward_user_msg(client: Client, message: Message):
     full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
     username = f"@{user.username}" if user.username else f"tg://user?id={user_id}"
 
-    # Save message in DB
+    # Save in DB
     memory_col.insert_one({
         "user_id": user_id,
-        "message": message.text or "📎 Media",
+        "message": message.text or "<media>",
+        "media_type": message.media.value if message.media else "text",
         "timestamp": datetime.utcnow()
     })
 
@@ -81,47 +76,60 @@ async def forward_user_msg(client: Client, message: Message):
     fwd = await message.forward(OWNER_ID)
 
     info_text = (
-        f"👤 New Message\n"
-        f"📛 Name: {full_name}\n"
-        f"🆔 ID: {user_id}\n"
-        f"🔗 Profile: {username}\n"
-        f"💬 Message: {message.text if message.text else '📎 Media'}"
+        f"New Message\n"
+        f"Name: {full_name}\n"
+        f"ID: {user_id}\n"
+        f"Profile: {username}\n"
+        f"Message: {message.text if message.text else '<media>'}"
     )
+    await fwd.reply_text(info_text)
 
-    await fwd.reply_text(info_text)  # plain text
+    # Auto delete user message
+    try:
+        await message.delete()
+    except:
+        pass
 
 # ====================
-# ADMIN REPLY → USER
+# ADMIN REPLY → USER (ALL MEDIA)
 # ====================
 @app.on_message(filters.private & filters.user(OWNER_ID) & filters.reply)
 async def reply_to_user(client: Client, message: Message):
     try:
-        text = message.reply_to_message.text
-        match = re.search(r'🆔 ID: (\d+)', text)
+        reply_to = message.reply_to_message
+        text = reply_to.text or ""
+        match = re.search(r'ID: (\d+)', text)
         if not match:
-            return await message.reply_text("⚠️ User ID not found!")
+            return await message.reply_text("User ID not found!")
 
         user_id = int(match.group(1))
 
+        # Save admin reply in DB
         memory_col.insert_one({
             "user_id": user_id,
-            "admin_reply": message.text,
+            "admin_reply": message.text or "<media>",
+            "media_type": message.media.value if message.media else "text",
             "timestamp": datetime.utcnow()
         })
 
-        await client.send_message(user_id, f"📩 Admin: {message.text}")
-        await message.reply_text("✅ Reply delivered.")
+        # Forward admin message (text or media)
+        if message.media:
+            await message.copy(user_id)
+        else:
+            await client.send_message(user_id, f"Admin: {message.text}")
+
+        await message.reply_text("Reply delivered.")
 
     except Exception as e:
-        await message.reply_text(f"⚠️ Error: {e}")
+        await message.reply_text(f"Error: {e}")
 
 # ====================
-# BROADCAST SYSTEM
+# BROADCAST (TEXT & MEDIA)
 # ====================
 @app.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
 async def broadcast_cmd(client: Client, message: Message):
     if len(message.command) < 2:
-        return await message.reply_text("⚡ Usage: /broadcast Your message here")
+        return await message.reply_text("Usage: /broadcast Your message here")
 
     text = message.text.split(" ", 1)[1]
     users = user_profiles_col.find()
@@ -129,21 +137,21 @@ async def broadcast_cmd(client: Client, message: Message):
 
     for user in users:
         try:
-            await client.send_message(user["user_id"], f"📢 Broadcast:\n\n{text}")
+            await client.send_message(user["user_id"], f"Broadcast:\n{text}")
             sent += 1
         except:
             failed += 1
-        await asyncio.sleep(0.05)  # prevent floodwait
+        await asyncio.sleep(0.05)
 
-    await message.reply_text(f"✅ Broadcast sent to {sent} users, ❌ Failed: {failed}")
+    await message.reply_text(f"Broadcast sent to {sent} users, failed: {failed}")
 
 # ====================
-# STATS COMMAND
+# STATS
 # ====================
 @app.on_message(filters.command("stats") & filters.user(OWNER_ID))
 async def stats_cmd(client: Client, message: Message):
     total_users = user_profiles_col.count_documents({})
-    await message.reply_text(f"📊 Total registered users: {total_users}")
+    await message.reply_text(f"Total users: {total_users}")
 
 # ====================
 # CLONE SYSTEM
@@ -151,11 +159,11 @@ async def stats_cmd(client: Client, message: Message):
 @app.on_message(filters.command("clone") & filters.user(OWNER_ID))
 async def clone_bot(client: Client, message: Message):
     if len(message.command) < 2:
-        return await message.reply_text("⚡ Usage: /clone BOT_TOKEN")
+        return await message.reply_text("Usage: /clone BOT_TOKEN")
 
     new_token = message.command[1]
     if new_token in clones:
-        return await message.reply_text("⚠️ Clone bot already running!")
+        return await message.reply_text("Clone bot already running!")
 
     try:
         clone_client = Client(
@@ -167,9 +175,9 @@ async def clone_bot(client: Client, message: Message):
         )
         await clone_client.start()
         clones[new_token] = clone_client
-        await message.reply_text(f"✅ Clone Bot started with token ending {new_token[-6:]}")
+        await message.reply_text(f"Clone Bot started with token ending {new_token[-6:]}")
     except Exception as e:
-        await message.reply_text(f"⚠️ Clone failed: {e}")
+        await message.reply_text(f"Clone failed: {e}")
 
 # ====================
 # FLASK HEALTH CHECK
@@ -178,7 +186,7 @@ flask_app = Flask(__name__)
 
 @flask_app.route('/')
 def home():
-    return "✅ Gemini AI Bot running with MongoDB + Clone System!"
+    return "Gemini AI Bot running with MongoDB + Clone System!"
 
 def run_flask():
     flask_app.run(host="0.0.0.0", port=PORT)
@@ -188,5 +196,5 @@ def run_flask():
 # ====================
 if __name__ == "__main__":
     threading.Thread(target=run_flask).start()
-    print("🤖 Gemini AI Livegram Bot Started with MongoDB + Clone System...")
+    print("Gemini AI Bot Started with MongoDB + Clone System...")
     app.run()
