@@ -6,16 +6,8 @@ import asyncio
 import threading
 import os
 from datetime import datetime
-
-# ====================
-# CONFIGURATION
-# ====================
-API_ID = int(os.environ.get("API_ID", "27546440"))
-API_HASH = os.environ.get("API_HASH", "3892f78baf81709ac1672ef1c24a3556")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "7965557926:AAGhbSSvL4P12lE1_jbPNDBPr5XLLFkD5OE")
-OWNER_ID = int(os.environ.get("OWNER_ID", "7744878270"))
-PORT = int(os.environ.get("PORT", 8080))
-MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://RADHAXRANI:RADHAXRANI@cluster0.ftpb4.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+import re
+from config import config
 
 # ====================
 # DATABASE
@@ -36,7 +28,7 @@ app = Client(
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=BOT_TOKEN,
-    workers=300
+    workers=100  # Render / Docker friendly
 )
 
 # Dictionary to track clone bots
@@ -53,6 +45,7 @@ async def start_cmd(client: Client, message: Message):
         {"$set": {
             "user_id": user.id,
             "first_name": user.first_name,
+            "last_name": user.last_name,
             "username": user.username,
             "joined_at": datetime.utcnow()
         }},
@@ -63,7 +56,7 @@ async def start_cmd(client: Client, message: Message):
         await message.reply_text("👑 Admin Panel Ready!")
     else:
         await message.reply_text(
-            "👋 Namaste! Yeh ek *Livegram Style ChatBot* hai.\n"
+            "👋 Namaste! Yeh ek Livegram Style ChatBot hai.\n"
             "Apka message directly Admin ko bhej diya jayega."
         )
 
@@ -74,9 +67,8 @@ async def start_cmd(client: Client, message: Message):
 async def forward_user_msg(client: Client, message: Message):
     user = message.from_user
     user_id = user.id
-    name = user.first_name or "Unknown"
-
-    profile_link = f"@{user.username}" if user.username else f"[Click Here](tg://user?id={user_id})"
+    full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
+    username = f"@{user.username}" if user.username else f"tg://user?id={user_id}"
 
     # Save message in DB
     memory_col.insert_one({
@@ -87,14 +79,16 @@ async def forward_user_msg(client: Client, message: Message):
 
     # Forward to admin
     fwd = await message.forward(OWNER_ID)
+
     info_text = (
-        f"👤 *New Message*\n\n"
-        f"📛 Name: {name}\n"
-        f"🆔 ID: `{user_id}`\n"
-        f"🔗 Profile: {profile_link}\n"
+        f"👤 New Message\n"
+        f"📛 Name: {full_name}\n"
+        f"🆔 ID: {user_id}\n"
+        f"🔗 Profile: {username}\n"
         f"💬 Message: {message.text if message.text else '📎 Media'}"
     )
-    await fwd.reply_text(info_text, parse_mode="Markdown")
+
+    await fwd.reply_text(info_text)  # plain text
 
 # ====================
 # ADMIN REPLY → USER
@@ -102,15 +96,12 @@ async def forward_user_msg(client: Client, message: Message):
 @app.on_message(filters.private & filters.user(OWNER_ID) & filters.reply)
 async def reply_to_user(client: Client, message: Message):
     try:
-        lines = message.reply_to_message.text.split("\n")
-        user_id = None
-        for line in lines:
-            if line.startswith("🆔 ID:"):
-                user_id = int(line.split("`")[1])
-                break
-
-        if not user_id:
+        text = message.reply_to_message.text
+        match = re.search(r'🆔 ID: (\d+)', text)
+        if not match:
             return await message.reply_text("⚠️ User ID not found!")
+
+        user_id = int(match.group(1))
 
         memory_col.insert_one({
             "user_id": user_id,
@@ -120,6 +111,7 @@ async def reply_to_user(client: Client, message: Message):
 
         await client.send_message(user_id, f"📩 Admin: {message.text}")
         await message.reply_text("✅ Reply delivered.")
+
     except Exception as e:
         await message.reply_text(f"⚠️ Error: {e}")
 
@@ -141,7 +133,7 @@ async def broadcast_cmd(client: Client, message: Message):
             sent += 1
         except:
             failed += 1
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.05)  # prevent floodwait
 
     await message.reply_text(f"✅ Broadcast sent to {sent} users, ❌ Failed: {failed}")
 
@@ -171,7 +163,7 @@ async def clone_bot(client: Client, message: Message):
             api_id=API_ID,
             api_hash=API_HASH,
             bot_token=new_token,
-            workers=300
+            workers=100
         )
         await clone_client.start()
         clones[new_token] = clone_client
