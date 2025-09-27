@@ -7,7 +7,7 @@ import threading
 import os
 from datetime import datetime
 import re
-from config import config*
+import config
 
 # ====================
 # DATABASE
