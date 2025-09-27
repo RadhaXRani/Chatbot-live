@@ -7,7 +7,7 @@ import threading
 import os
 from datetime import datetime
 import re
-import config
+from config import API_ID, API_HASH, BOT_TOKEN, OWNER_ID, PORT, MONGO_URI
 
 # ====================
 # DATABASE
