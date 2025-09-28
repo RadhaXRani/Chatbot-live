@@ -10,7 +10,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from config import API_ID, API_HASH, BOT_TOKEN, OWNER_ID, PORT, MONGO_URI
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
-from datetime import datetime
+
 
 
 
@@ -24,7 +24,7 @@ memory_col = db["memory"]
 user_profiles_col = db["user_profiles"]
 # MongoDB Collection for Welcome Config
 welcome_col = db["welcome_config"]
-
+fsub_col = db["fsub_config"]
 
 # ====================
 # BOT CLIENT
@@ -76,32 +76,6 @@ def run_flask():
 # START COMMAND
 # ====================
 
-from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
-from datetime import datetime
-from pymongo import MongoClient
-
-# ===============================
-# CONFIG
-# ===============================
-API_ID = 123456       # apna API_ID
-API_HASH = "YOUR_API_HASH"
-BOT_TOKEN = "YOUR_BOT_TOKEN"
-OWNER_ID = 123456789  # apna Telegram ID
-MONGO_URI = "mongodb://localhost:27017/"
-
-# ===============================
-# MongoDB Setup
-# ===============================
-client_db = MongoClient(MONGO_URI)
-db = client_db["gemini_bot_db"]
-welcome_col = db["welcome_config"]
-fsub_col = db["fsub_config"]
-
-# ===============================
-# Bot Client
-# ===============================
-app = Client("gemini_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # ===============================
 # /setwelcome → Set Photo/Caption/Buttons
