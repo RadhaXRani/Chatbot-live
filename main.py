@@ -1,14 +1,11 @@
-from pyrogram import Client, filters, idle
+from pyrogram import Client, filters
 from pyrogram.types import Message
 from flask import Flask
 from pymongo import MongoClient
-import asyncio
 import threading
-import os
-from datetime import datetime
-import re
 import random
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from datetime import datetime
+from apscheduler.schedulers.background import BackgroundScheduler
 from config import API_ID, API_HASH, BOT_TOKEN, OWNER_ID, PORT, MONGO_URI
 
 # ====================
@@ -46,24 +43,25 @@ quotes = [
     "Small aim is a crime; have great aim. – A.P.J. Abdul Kalam"
 ]
 
-async def send_daily_quote():
+def send_daily_quote_job():
     quote = random.choice(quotes)
-    await app.send_message(CHANNEL_ID, f"🌅 Good Morning!\n\n{quote}")
+    from asyncio import get_event_loop, run_coroutine_threadsafe
+    loop = get_event_loop()
+    run_coroutine_threadsafe(
+        app.send_message(CHANNEL_ID, f"🌅 Good Morning!\n\n{quote}"), loop
+    )
 
 # ====================
-# MANUAL POSTING
+# FLASK HEALTH CHECK
 # ====================
-@app.on_message(filters.command("post") & filters.user(OWNER_ID))
-async def manual_post(client, message: Message):
-    if len(message.command) > 1:
-        text = " ".join(message.command[1:])
-        await app.send_message(CHANNEL_ID, text)
-        await message.reply("✅ Posted to channel!")
-    elif message.reply_to_message:
-        await message.reply_to_message.copy(CHANNEL_ID)
-        await message.reply("✅ Media posted to channel!")
-    else:
-        await message.reply("⚠️ Usage: /post <your message> or reply to media with /post")
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def home():
+    return "Gemini AI Bot running with MongoDB + Clone + Motivation + Manual Post!"
+
+def run_flask():
+    flask_app.run(host="0.0.0.0", port=PORT)
 
 # ====================
 # START COMMAND
@@ -89,7 +87,7 @@ async def start_cmd(client: Client, message: Message):
         await message.reply_text("Hello! Your message (text/media) will be sent to the admin.")
 
 # ====================
-# FORWARD USER → ADMIN
+# FORWARD USER → ADMIN + CONFIRMATION
 # ====================
 @app.on_message(filters.private & ~filters.user(OWNER_ID))
 async def forward_user_msg(client: Client, message: Message):
@@ -130,6 +128,7 @@ async def reply_to_user(client: Client, message: Message):
     try:
         reply_to = message.reply_to_message
         text = reply_to.text or ""
+        import re
         match = re.search(r'ID: (\d+)', text)
         if not match:
             return await message.reply_text("⚠️ User ID not found!")
@@ -179,7 +178,7 @@ async def stats_cmd(client: Client, message: Message):
     total_users = user_profiles_col.count_documents({})
     text = f"📊 Total users: {total_users}\n\n"
 
-    users = user_profiles_col.find().sort("joined_at", -1)  # latest first
+    users = user_profiles_col.find().sort("joined_at", -1)
     all_lines = []
 
     for u in users:
@@ -191,7 +190,6 @@ async def stats_cmd(client: Client, message: Message):
         line = f"👤 {fname} {lname}\n🆔 {user_id}\n🔗 {uname}\n📅 {joined}\n"
         all_lines.append(line)
 
-    # Telegram message limit handling
     chunk = ""
     for line in all_lines:
         if len(chunk) + len(line) > 4000:
@@ -228,29 +226,31 @@ async def clone_bot(client: Client, message: Message):
         await message.reply_text(f"Clone failed: {e}")
 
 # ====================
-# FLASK HEALTH CHECK
+# MANUAL POST (text or reply media)
 # ====================
-flask_app = Flask(__name__)
-
-@flask_app.route('/')
-def home():
-    return "Gemini AI Bot running with MongoDB + Clone + Motivation!"
-
-def run_flask():
-    flask_app.run(host="0.0.0.0", port=PORT)
+@app.on_message(filters.command("post") & filters.user(OWNER_ID))
+async def manual_post(client, message: Message):
+    if len(message.command) > 1:
+        text = " ".join(message.command[1:])
+        await app.send_message(CHANNEL_ID, text)
+        await message.reply("✅ Posted to channel!")
+    elif message.reply_to_message:
+        await message.reply_to_message.copy(CHANNEL_ID)
+        await message.reply("✅ Media posted to channel!")
+    else:
+        await message.reply("⚠️ Usage: /post <text> or reply to media with /post")
 
 # ====================
 # RUN BOT + SCHEDULER + FLASK
 # ====================
 if __name__ == "__main__":
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(send_daily_quote, "cron", hour=7, minute=0, timezone="Asia/Kolkata")
+    # Start Flask in background thread
+    threading.Thread(target=run_flask).start()
 
-    async def main():
-        scheduler.start()
-        threading.Thread(target=run_flask).start()
-        print("Gemini AI Bot Started with MongoDB + Clone + Motivation System...")
-        await app.start()
-        await idle()
+    # Scheduler for daily quote
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(send_daily_quote_job, "cron", hour=7, minute=0)  # 7:00 AM
+    scheduler.start()
 
-    asyncio.run(main())
+    print("✅ Gemini AI Bot Started with MongoDB + Clone + Motivation System...")
+    app.run()
