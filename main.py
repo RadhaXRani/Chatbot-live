@@ -1,6 +1,6 @@
 import asyncio
 from pyrogram import Client, filters
-from pyrogram.types import Message
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask
 from pymongo import MongoClient
 import threading
@@ -8,21 +8,15 @@ import random
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from config import API_ID, API_HASH, BOT_TOKEN, OWNER_ID, PORT, MONGO_URI
-from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
-
-
-
 
 # ====================
 # DATABASE
 # ====================
-client = MongoClient(MONGO_URI)
-db = client["gemini_bot_db"]
+client_db = MongoClient(MONGO_URI)
+db = client_db["gemini_bot_db"]
 
 memory_col = db["memory"]
 user_profiles_col = db["user_profiles"]
-# MongoDB Collection for Welcome Config
 welcome_col = db["welcome_config"]
 fsub_col = db["fsub_config"]
 
@@ -42,8 +36,7 @@ clones = {}  # track clones
 # ====================
 # MOTIVATION SYSTEM
 # ====================
-CHANNEL_ID = -1002966725498  # Your channel ID
-
+CHANNEL_ID = -1002966725498
 quotes = [
     "Dream, dream, dream. Dreams transform into thoughts and thoughts result in action. – A.P.J. Abdul Kalam",
     "Be the change that you wish to see in the world. – Mahatma Gandhi",
@@ -73,17 +66,14 @@ def run_flask():
     flask_app.run(host="0.0.0.0", port=PORT)
 
 # ====================
-# START COMMAND
+# /setwelcome → Photo + Caption + Buttons
 # ====================
-
-
-# ===============================
-# /setwelcome → Set Photo/Caption/Buttons
-# ===============================
 @app.on_message(filters.command("setwelcome") & filters.user(OWNER_ID))
 async def set_welcome(client: Client, message: Message):
     if not message.reply_to_message:
-        return await message.reply("⚠️ Reply to a photo/text to set welcome message.\nOptional: use `btn=Text|URL,...` for buttons.")
+        return await message.reply(
+            "⚠️ Reply to a photo/text to set welcome.\nOptional: btn=Text|URL,..."
+        )
 
     caption = message.reply_to_message.caption or (message.reply_to_message.text if message.reply_to_message.text else None)
     file_id = message.reply_to_message.photo.file_id if message.reply_to_message.photo else None
@@ -91,21 +81,27 @@ async def set_welcome(client: Client, message: Message):
     # Parse inline buttons
     buttons = []
     if "btn=" in message.text:
-        btn_text = message.text.split("btn=")[1]
+        btn_text = message.text.split("btn=", maxsplit=1)[1]
         for pair in btn_text.split(","):
-            try:
-                text, url = pair.split("|")
-                buttons.append([InlineKeyboardButton(text.strip(), url=url.strip())])
-            except:
+            if "|" not in pair:
                 continue
+            text, url = pair.split("|", maxsplit=1)
+            text = text.strip()
+            url = url.strip()
+            if text and url:
+                buttons.append([InlineKeyboardButton(text, url=url)])
 
-    welcome_data = {"photo": file_id, "caption": caption, "buttons": buttons}
-    welcome_col.update_one({"_id": "welcome"}, {"$set": welcome_data}, upsert=True)
+    # Save to DB
+    welcome_col.update_one(
+        {"_id": "welcome"},
+        {"$set": {"caption": caption, "photo": file_id, "buttons": buttons}},
+        upsert=True
+    )
     await message.reply("✅ Welcome message set successfully!")
 
-# ===============================
+# ====================
 # /delwelcome → Delete Welcome
-# ===============================
+# ====================
 @app.on_message(filters.command("delwelcome") & filters.user(OWNER_ID))
 async def del_welcome(client: Client, message: Message):
     result = welcome_col.delete_one({"_id": "welcome"})
@@ -114,10 +110,9 @@ async def del_welcome(client: Client, message: Message):
     else:
         await message.reply("⚠️ No welcome message was set previously.")
 
-# ===============================
+# ====================
 # /fsub → Force Subscribe On/Off
-# Usage: /fsub on @Channel | /fsub off
-# ===============================
+# ====================
 @app.on_message(filters.command("fsub") & filters.user(OWNER_ID))
 async def set_fsub(client: Client, message: Message):
     args = message.text.split()
@@ -133,24 +128,20 @@ async def set_fsub(client: Client, message: Message):
     else:
         await message.reply("⚠️ Invalid format. Use `/fsub on @Channel` or `/fsub off`")
 
-# ===============================
+# ====================
 # /start → Show Welcome + Force Subscribe
-# ===============================
+# ====================
 @app.on_message(filters.command("start") & filters.private)
 async def start_cmd(client: Client, message: Message):
-    # Check Force Subscribe
+    # Force Subscribe check
     fsub_cfg = fsub_col.find_one({"_id": "fsub"}) or {"status": False}
     if fsub_cfg.get("status"):
         channel = fsub_cfg.get("channel")
         try:
             member = await client.get_chat_member(channel, message.from_user.id)
             if member.status not in ["member", "administrator", "creator"]:
-                # User not joined
                 btn = InlineKeyboardMarkup([[InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{channel.strip('@')}")]])
-                return await message.reply(
-                    f"⚠️ You must join {channel} to use this bot.",
-                    reply_markup=btn
-                )
+                return await message.reply(f"⚠️ You must join {channel} to use this bot.", reply_markup=btn)
         except:
             return await message.reply("⚠️ Invalid channel or I’m not admin there.")
 
@@ -172,6 +163,7 @@ async def start_cmd(client: Client, message: Message):
             message.chat.id,
             "👋 Welcome to the bot!\n📢 This is Radha’s Bot.\nThe Owner will reply soon, ask your questions and doubts."
         )
+
 
 # ====================
 # FORWARD USER → ADMIN + CONFIRMATION
