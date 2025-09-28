@@ -76,79 +76,129 @@ def run_flask():
 # START COMMAND
 # ====================
 
-# ==========================
-# /setwelcome (Owner only)
-# ==========================
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
+from datetime import datetime
+from pymongo import MongoClient
+
+# ===============================
+# CONFIG
+# ===============================
+API_ID = 123456       # apna API_ID
+API_HASH = "YOUR_API_HASH"
+BOT_TOKEN = "YOUR_BOT_TOKEN"
+OWNER_ID = 123456789  # apna Telegram ID
+MONGO_URI = "mongodb://localhost:27017/"
+
+# ===============================
+# MongoDB Setup
+# ===============================
+client_db = MongoClient(MONGO_URI)
+db = client_db["gemini_bot_db"]
+welcome_col = db["welcome_config"]
+fsub_col = db["fsub_config"]
+
+# ===============================
+# Bot Client
+# ===============================
+app = Client("gemini_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+
+# ===============================
+# /setwelcome → Set Photo/Caption/Buttons
+# ===============================
 @app.on_message(filters.command("setwelcome") & filters.user(OWNER_ID))
 async def set_welcome(client: Client, message: Message):
-    if message.reply_to_message:  
-        caption = message.reply_to_message.caption or "👋 Welcome!"
-        file_id = None
+    if not message.reply_to_message:
+        return await message.reply("⚠️ Reply to a photo/text to set welcome message.\nOptional: use `btn=Text|URL,...` for buttons.")
 
-        if message.reply_to_message.photo:
-            file_id = message.reply_to_message.photo.file_id
-        elif message.reply_to_message.document:
-            file_id = message.reply_to_message.document.file_id
+    caption = message.reply_to_message.caption or (message.reply_to_message.text if message.reply_to_message.text else None)
+    file_id = message.reply_to_message.photo.file_id if message.reply_to_message.photo else None
 
-        # Inline buttons parse
-        btn_text = message.text.split("btn=")
-        buttons = []
-        if len(btn_text) > 1:
-            btn_pairs = btn_text[1].split(",")
-            for pair in btn_pairs:
-                try:
-                    text, url = pair.split("|")
-                    buttons.append([InlineKeyboardButton(text.strip(), url=url.strip())])
-                except:
-                    pass
+    # Parse inline buttons
+    buttons = []
+    if "btn=" in message.text:
+        btn_text = message.text.split("btn=")[1]
+        for pair in btn_text.split(","):
+            try:
+                text, url = pair.split("|")
+                buttons.append([InlineKeyboardButton(text.strip(), url=url.strip())])
+            except:
+                continue
 
-        # Save in DB
-        welcome_col.update_one(
-            {"_id": "welcome"},
-            {"$set": {"caption": caption, "photo": file_id, "buttons": buttons}},
-            upsert=True
-        )
+    welcome_data = {"photo": file_id, "caption": caption, "buttons": buttons}
+    welcome_col.update_one({"_id": "welcome"}, {"$set": welcome_data}, upsert=True)
+    await message.reply("✅ Welcome message set successfully!")
 
-        await message.reply("✅ Welcome message set successfully!")
+# ===============================
+# /delwelcome → Delete Welcome
+# ===============================
+@app.on_message(filters.command("delwelcome") & filters.user(OWNER_ID))
+async def del_welcome(client: Client, message: Message):
+    result = welcome_col.delete_one({"_id": "welcome"})
+    if result.deleted_count > 0:
+        await message.reply("🗑️ Welcome message deleted. Default message will show now.")
     else:
-        await message.reply("⚠️ Reply to a photo/text with `/setwelcome btn=...` to set welcome message.")
+        await message.reply("⚠️ No welcome message was set previously.")
 
+# ===============================
+# /fsub → Force Subscribe On/Off
+# Usage: /fsub on @Channel | /fsub off
+# ===============================
+@app.on_message(filters.command("fsub") & filters.user(OWNER_ID))
+async def set_fsub(client: Client, message: Message):
+    args = message.text.split()
+    if len(args) < 2:
+        return await message.reply("⚙️ Usage:\n/fsub on @ChannelUsername\n/fsub off")
 
-# ==========================
-# /start → Show Welcome
-# ==========================
+    if args[1].lower() == "on" and len(args) == 3:
+        fsub_col.update_one({"_id": "fsub"}, {"$set": {"status": True, "channel": args[2]}}, upsert=True)
+        await message.reply(f"✅ Force Subscribe enabled for {args[2]}")
+    elif args[1].lower() == "off":
+        fsub_col.update_one({"_id": "fsub"}, {"$set": {"status": False}}, upsert=True)
+        await message.reply("❌ Force Subscribe disabled.")
+    else:
+        await message.reply("⚠️ Invalid format. Use `/fsub on @Channel` or `/fsub off`")
+
+# ===============================
+# /start → Show Welcome + Force Subscribe
+# ===============================
 @app.on_message(filters.command("start") & filters.private)
 async def start_cmd(client: Client, message: Message):
+    # Check Force Subscribe
+    fsub_cfg = fsub_col.find_one({"_id": "fsub"}) or {"status": False}
+    if fsub_cfg.get("status"):
+        channel = fsub_cfg.get("channel")
+        try:
+            member = await client.get_chat_member(channel, message.from_user.id)
+            if member.status not in ["member", "administrator", "creator"]:
+                # User not joined
+                btn = InlineKeyboardMarkup([[InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{channel.strip('@')}")]])
+                return await message.reply(
+                    f"⚠️ You must join {channel} to use this bot.",
+                    reply_markup=btn
+                )
+        except:
+            return await message.reply("⚠️ Invalid channel or I’m not admin there.")
+
+    # Show Welcome
     config = welcome_col.find_one({"_id": "welcome"})
-    
     if config:
-        caption = config.get("caption", None)
+        caption = config.get("caption", "👋 Welcome!")
         photo = config.get("photo", None)
         buttons = config.get("buttons", [])
         markup = InlineKeyboardMarkup(buttons) if buttons else None
 
-        # अगर कुछ सेट किया गया है तो वही show करो
         if photo:
-            await client.send_photo(
-                message.chat.id,
-                photo=photo,
-                caption=caption,
-                reply_markup=markup
-            )
+            await client.send_photo(message.chat.id, photo=photo, caption=caption, reply_markup=markup)
         else:
-            await client.send_message(
-                message.chat.id,
-                text=caption,
-                reply_markup=markup
-            )
+            await client.send_message(message.chat.id, text=caption, reply_markup=markup)
     else:
-        # Default normal welcome (जब कुछ भी set न हो)
-        default_text = (
-            "👋 Welcome!\n\n"
-            "📢 This is Radha’s Bot.\n"
-            "The Owner will reply soon, ask your questions and doubts."
+        # Default welcome
+        await client.send_message(
+            message.chat.id,
+            "👋 Welcome to the bot!\n📢 This is Radha’s Bot.\nThe Owner will reply soon, ask your questions and doubts."
         )
-        await client.send_message(message.chat.id, default_text)
+
 # ====================
 # FORWARD USER → ADMIN + CONFIRMATION
 # ====================
