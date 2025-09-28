@@ -71,7 +71,7 @@ def run_flask():
 # ===============================
 # /setwelcome → Set Welcome
 # ===============================
-@app.on_message(filters.command("setwelcome") & filters.(OWNER_ID))
+@app.on_message(filters.command("setwelcome") & filters.user(OWNER_ID))
 async def set_welcome(client: Client, message: Message):
     if not message.reply_to_message:
         return await message.reply(
