@@ -19,7 +19,7 @@ memory_col = db["memory"]
 user_profiles_col = db["user_profiles"]
 welcome_col = db["welcome_config"]
 fsub_col = db["fsub_config"]
-
+user_profiles_col = db["user_profiles"]
 # ====================
 # BOT CLIENT
 # ====================
@@ -66,65 +66,107 @@ def run_flask():
     flask_app.run(host="0.0.0.0", port=PORT)
 
 # ====================
-# /fsub → Force Subscribe
-# ====================
-# ====================
-# /fsub → On/Off toggle
-# ====================
-@app.on_message(filters.command("fsub") & filters.user(OWNER_ID))
-async def toggle_fsub(client: Client, message: Message):
-    args = message.text.split()
-    if len(args) < 2:
-        return await message.reply("⚙️ Usage:\n/fsub on → enable\n/fsub off → disable")
 
-    if args[1].lower() == "on":
-        db["fsub_config"].update_one(
-            {"_id": "fsub"},
-            {"$set": {"status": True, "channel": "@Dream_Job_soon"}},
-            upsert=True
+
+# ===============================
+# /setwelcome → Set Welcome
+# ===============================
+@app.on_message(filters.command("setwelcome") & filters.
+                
+                (OWNER_ID))
+async def set_welcome(client: Client, message: Message):
+    if not message.reply_to_message:
+        return await message.reply(
+            "⚠️ Reply to a photo/text to set welcome.\n"
+            "Optional: `btn=Text1|URL1,Text2|URL2` or JSON format `btn=[{{'text':'T','url':'U'}}]`"
         )
-        await message.reply("✅ Force Subscribe enabled for @Dream_Job_soon")
-    elif args[1].lower() == "off":
-        db["fsub_config"].update_one(
-            {"_id": "fsub"},
-            {"$set": {"status": False}},
-            upsert=True
-        )
-        await message.reply("❌ Force Subscribe disabled")
+
+    # Photo & caption
+    file_id = message.reply_to_message.photo.file_id if message.reply_to_message.photo else None
+    caption = message.reply_to_message.caption or message.reply_to_message.text or "👋 Welcome!"
+
+    # Buttons
+    buttons = []
+    if "btn=" in message.text:
+        btn_text = message.text.split("btn=")[1].strip()
+
+        # Try JSON first
+        try:
+            btn_list = json.loads(btn_text)
+            for b in btn_list:
+                buttons.append([InlineKeyboardButton(b["text"], url=b["url"])])
+        except:
+            # Fallback: comma separated format
+            btn_pairs = btn_text.split(",")
+            for pair in btn_pairs:
+                try:
+                    text, url = pair.split("|")
+                    buttons.append([InlineKeyboardButton(text.strip(), url=url.strip())])
+                except:
+                    continue
+
+    # Save to DB
+    welcome_col.update_one(
+        {"_id": "welcome"},
+        {"$set": {"photo": file_id, "caption": caption, "buttons": buttons}},
+        upsert=True
+    )
+
+    await message.reply("✅ Welcome message set successfully!")
+
+# ===============================
+# /delwelcome → Delete Welcome
+# ===============================
+@app.on_message(filters.command("delwelcome") & filters.user(OWNER_ID))
+async def del_welcome(client: Client, message: Message):
+    result = welcome_col.delete_one({"_id": "welcome"})
+    if result.deleted_count:
+        await message.reply("🗑️ Welcome message deleted. Default message will show now.")
     else:
-        await message.reply("⚠️ Invalid option. Use `/fsub on` or `/fsub off`")
+        await message.reply("⚠️ No welcome message was set previously.")
 
-# ====================
-# /start → Check toggle
-# ====================
+# ===============================
+# /start → Show Welcome
+# ===============================
 @app.on_message(filters.command("start") & filters.private)
 async def start_cmd(client: Client, message: Message):
     user = message.from_user
+    user_profiles_col.update_one(
+        {"user_id": user.id},
+        {"$set": {
+            "user_id": user.id,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "username": user.username,
+            "joined_at": datetime.utcnow()
+        }},
+        upsert=True
+    )
 
-    # Owner bypass
-    if user.id == OWNER_ID:
-        await message.reply("✅ Ready!")
-        return
+    # Fetch welcome config
+    config = welcome_col.find_one({"_id": "welcome"})
+    if config:
+        caption = config.get("caption", "👋 Welcome!")
+        photo = config.get("photo", None)
+        buttons = config.get("buttons", [])
 
-    # Check fsub toggle
-    fsub_cfg = db["fsub_config"].find_one({"_id": "fsub"}) or {"status": False}
-    if fsub_cfg.get("status"):
-        channel = fsub_cfg.get("channel")
-        try:
-            member = await client.get_chat_member(channel, user.id)
-            if member.status not in ["member", "administrator", "creator"]:
-                btn = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{channel.strip('@')}")]
-                ])
-                return await message.reply(
-                    f"⚠️ You must join {channel} to use this bot.",
-                    reply_markup=btn
-                )
-        except:
-            return await message.reply("⚠️ Invalid channel or I’m not admin there.")
+        markup = InlineKeyboardMarkup(buttons) if buttons else None
 
-    # Normal welcome / quote
-    await message.reply("👋 Hello! Welcome to the bot.\nI reply soon to your questions.\n\n🌟 Quote of the day")
+        if photo:
+            await client.send_photo(message.chat.id, photo=photo, caption=caption, reply_markup=markup)
+        else:
+            await client.send_message(message.chat.id, text=caption, reply_markup=markup)
+    else:
+        # Default welcome
+        default_buttons = [
+            [InlineKeyboardButton("📢 Join My Channel", url="https://t.me/Dream_Job_soon")]
+        ]
+        await client.send_message(
+            message.chat.id,
+            "👋 Welcome to the bot!\nI am Radha ❤️\nAsk your questions or doubts, I will reply soon!",
+            reply_markup=InlineKeyboardMarkup(default_buttons)
+        )
+
 
 # ====================
 # FORWARD USER → ADMIN + CONFIRMATION
