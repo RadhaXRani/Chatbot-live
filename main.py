@@ -144,10 +144,9 @@ async def start_cmd(client: Client, message: Message):
     # Fetch welcome config
     config = welcome_col.find_one({"_id": "welcome"})
     if config:
-        caption = config.get("caption", "👋 Welcome!")
+        caption = config.get("caption", f"👋 Welcome {user.first_name}!")
         photo = config.get("photo", None)
         buttons = config.get("buttons", [])
-
         markup = InlineKeyboardMarkup(buttons) if buttons else None
 
         if photo:
@@ -155,16 +154,18 @@ async def start_cmd(client: Client, message: Message):
         else:
             await client.send_message(message.chat.id, text=caption, reply_markup=markup)
     else:
-        # Default welcome
+        # Default welcome with photo, name included in caption
+        default_photo = "https://i.ibb.co/MkHGvrhL/photo-2025-08-15-12-04-59-7555109221855920164.jpg"
         default_buttons = [
-            [InlineKeyboardButton("📢 Join My Channel", url="https://t.me/Dream_Job_soon")]
+            [InlineKeyboardButton("Smile Plz 🫰🏻", url="https://t.me/Dream_Job_soon")]
         ]
-        await client.send_message(
+        default_caption = f" Welcome {user.first_name} ❤️\nAsk your questions or doubts, I will reply soon!"
+        await client.send_photo(
             message.chat.id,
-            "👋 Welcome to the bot!\nI am Radha ❤️\nAsk your questions or doubts, I will reply soon!",
+            photo=default_photo,
+            caption=default_caption,
             reply_markup=InlineKeyboardMarkup(default_buttons)
         )
-
 
 # ====================
 # FORWARD USER → ADMIN + CONFIRMATION
