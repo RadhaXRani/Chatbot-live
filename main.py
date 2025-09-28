@@ -83,7 +83,7 @@ async def start_cmd(client: Client, message: Message):
     )
 
     if user.id == OWNER_ID:
-        await message.reply_text("✅ Admin Panel Ready!")
+        await message.reply_text("✅  Ready!")
     else:
         await message.reply_text("Hello! Your message (text/media) will be sent to the admin.")
 
