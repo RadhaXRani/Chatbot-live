@@ -8,6 +8,11 @@ import random
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from config import API_ID, API_HASH, BOT_TOKEN, OWNER_ID, PORT, MONGO_URI
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
+from datetime import datetime
+
+
 
 # ====================
 # DATABASE
@@ -17,6 +22,9 @@ db = client["gemini_bot_db"]
 
 memory_col = db["memory"]
 user_profiles_col = db["user_profiles"]
+# MongoDB Collection for Welcome Config
+welcome_col = db["welcome_config"]
+
 
 # ====================
 # BOT CLIENT
@@ -67,26 +75,80 @@ def run_flask():
 # ====================
 # START COMMAND
 # ====================
+
+# ==========================
+# /setwelcome (Owner only)
+# ==========================
+@app.on_message(filters.command("setwelcome") & filters.user(OWNER_ID))
+async def set_welcome(client: Client, message: Message):
+    if message.reply_to_message:  
+        caption = message.reply_to_message.caption or "👋 Welcome!"
+        file_id = None
+
+        if message.reply_to_message.photo:
+            file_id = message.reply_to_message.photo.file_id
+        elif message.reply_to_message.document:
+            file_id = message.reply_to_message.document.file_id
+
+        # Inline buttons parse
+        btn_text = message.text.split("btn=")
+        buttons = []
+        if len(btn_text) > 1:
+            btn_pairs = btn_text[1].split(",")
+            for pair in btn_pairs:
+                try:
+                    text, url = pair.split("|")
+                    buttons.append([InlineKeyboardButton(text.strip(), url=url.strip())])
+                except:
+                    pass
+
+        # Save in DB
+        welcome_col.update_one(
+            {"_id": "welcome"},
+            {"$set": {"caption": caption, "photo": file_id, "buttons": buttons}},
+            upsert=True
+        )
+
+        await message.reply("✅ Welcome message set successfully!")
+    else:
+        await message.reply("⚠️ Reply to a photo/text with `/setwelcome btn=...` to set welcome message.")
+
+
+# ==========================
+# /start → Show Welcome
+# ==========================
 @app.on_message(filters.command("start") & filters.private)
 async def start_cmd(client: Client, message: Message):
-    user = message.from_user
-    user_profiles_col.update_one(
-        {"user_id": user.id},
-        {"$set": {
-            "user_id": user.id,
-            "first_name": user.first_name,
-            "last_name": user.last_name,
-            "username": user.username,
-            "joined_at": datetime.utcnow()
-        }},
-        upsert=True
-    )
+    config = welcome_col.find_one({"_id": "welcome"})
+    
+    if config:
+        caption = config.get("caption", None)
+        photo = config.get("photo", None)
+        buttons = config.get("buttons", [])
+        markup = InlineKeyboardMarkup(buttons) if buttons else None
 
-    if user.id == OWNER_ID:
-        await message.reply_text("✅  Ready!")
+        # अगर कुछ सेट किया गया है तो वही show करो
+        if photo:
+            await client.send_photo(
+                message.chat.id,
+                photo=photo,
+                caption=caption,
+                reply_markup=markup
+            )
+        else:
+            await client.send_message(
+                message.chat.id,
+                text=caption,
+                reply_markup=markup
+            )
     else:
-        await message.reply_text("Hello! Your message (text/media) will be sent to the admin.")
-
+        # Default normal welcome (जब कुछ भी set न हो)
+        default_text = (
+            "👋 Welcome!\n\n"
+            "📢 This is Radha’s Bot.\n"
+            "The Owner will reply soon, ask your questions and doubts."
+        )
+        await client.send_message(message.chat.id, default_text)
 # ====================
 # FORWARD USER → ADMIN + CONFIRMATION
 # ====================
