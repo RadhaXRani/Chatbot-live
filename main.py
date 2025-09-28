@@ -65,46 +65,6 @@ def home():
 def run_flask():
     flask_app.run(host="0.0.0.0", port=PORT)
 
-from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from pymongo import MongoClient
-from datetime import datetime
-import threading
-from flask import Flask
-from config import API_ID, API_HASH, BOT_TOKEN, OWNER_ID, PORT, MONGO_URI
-
-# ====================
-# DATABASE
-# ====================
-client_db = MongoClient(MONGO_URI)
-db = client_db["gemini_bot_db"]
-
-user_profiles_col = db["user_profiles"]
-fsub_col = db["fsub_config"]  # Force Subscribe
-
-# ====================
-# BOT CLIENT
-# ====================
-app = Client(
-    "gemini_bot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN,
-    workers=100
-)
-
-# ====================
-# FLASK
-# ====================
-flask_app = Flask(__name__)
-
-@flask_app.route('/')
-def home():
-    return "Bot running..."
-
-def run_flask():
-    flask_app.run(host="0.0.0.0", port=PORT)
-
 # ====================
 # /fsub → Force Subscribe
 # ====================
