@@ -305,33 +305,26 @@ async def forward_user_msg(client: Client, message: Message):
 # RUN BOT + SCHEDULER + FLASK + DEPLOY MESSAGE
 # ====================
 if __name__ == "__main__":
-    import asyncio
-    from apscheduler.schedulers.background import BackgroundScheduler
-    from pyrogram import idle
     import threading
+    from apscheduler.schedulers.background import BackgroundScheduler
 
-    # Start Flask in background thread
+    # Flask background
     threading.Thread(target=run_flask, daemon=True).start()
 
-    # Scheduler for daily quote
+    # Scheduler
     scheduler = BackgroundScheduler()
     scheduler.add_job(send_daily_quote_job, "cron", hour=7, minute=0, timezone="Asia/Kolkata")
     scheduler.start()
 
-    async def main():
-        # Start the bot
-        await app.start()
+    # Deploy success message after bot starts
+    def send_deploy_message():
+        import asyncio
+        loop = asyncio.get_event_loop()
+        loop.create_task(app.send_message("@You_Are_A_Officer", "✅ Gemini AI Bot successfully deployed and running!"))
 
-        # Try sending deploy success message
-        try:
-            await app.send_message("@You_Are_A_Officer", "✅ Gemini AI Bot successfully deployed and running!")
-            print("✅ Deployment message sent to channel!")
-        except Exception as e:
-            print("⚠️ Failed to send deployment message:", e)
+    # Schedule deploy message 5 sec after start
+    threading.Timer(5, send_deploy_message).start()
 
-        print("✅ Gemini AI Bot Started with MongoDB + Clone + Motivation System...")
-        # Keep bot alive
-        await idle()
-        await app.stop()
-
-    asyncio.run(main())
+    print("✅ Gemini AI Bot Started with MongoDB + Clone + Motivation System...")
+    # Start bot (handlers will now work)
+    app.run()
