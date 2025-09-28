@@ -289,25 +289,40 @@ async def forward_user_msg(client: Client, message: Message):
         await conf_msg.delete()
     except:
         pass
+
+
+
 # ====================
-# RUN BOT + SCHEDULER + FLASK
+# RUN BOT + SCHEDULER + FLASK + DEPLOY MESSAGE
 # ====================
 if __name__ == "__main__":
-    # Start Flask
-    threading.Thread(target=run_flask).start()
+    import asyncio
+    from apscheduler.schedulers.background import BackgroundScheduler
+    from pyrogram import idle
+    import threading
 
-    # Scheduler
+    # Start Flask in background thread
+    threading.Thread(target=run_flask, daemon=True).start()
+
+    # Scheduler for daily quote
     scheduler = BackgroundScheduler()
-    scheduler.add_job(send_daily_quote_job, "cron", hour=7, minute=0)
+    scheduler.add_job(send_daily_quote, "cron", hour=7, minute=0, timezone="Asia/Kolkata")
     scheduler.start()
 
     async def main():
-        # Start bot
+        # Start the bot
         await app.start()
-        # Send deployment success message
-        await app.send_message(CHANNEL_ID, "✅ Gemini AI Bot successfully deployed and running!")
-        print("✅ Gemini AI Bot Started...")
+
+        # Try sending deploy success message
+        try:
+            await app.send_message("@You_Are_A_Officer", "✅ Gemini AI Bot successfully deployed and running!")
+            print("✅ Deployment message sent to channel!")
+        except Exception as e:
+            print("⚠️ Failed to send deployment message:", e)
+
+        print("✅ Gemini AI Bot Started with MongoDB + Clone + Motivation System...")
         # Keep bot alive
         await idle()
+        await app.stop()
 
     asyncio.run(main())
