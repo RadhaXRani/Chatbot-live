@@ -1,4 +1,4 @@
-from pyrogram import Client, filters
+from pyrogram import Client, filters, idle
 from pyrogram.types import Message
 from flask import Flask
 from pymongo import MongoClient
@@ -48,7 +48,7 @@ quotes = [
 
 async def send_daily_quote():
     quote = random.choice(quotes)
-    await app.send_message(CHANNEL_ID, quote)
+    await app.send_message(CHANNEL_ID, f"🌅 Good Morning!\n\n{quote}")
 
 # ====================
 # MANUAL POSTING
@@ -59,13 +59,11 @@ async def manual_post(client, message: Message):
         text = " ".join(message.command[1:])
         await app.send_message(CHANNEL_ID, text)
         await message.reply("✅ Posted to channel!")
+    elif message.reply_to_message:
+        await message.reply_to_message.copy(CHANNEL_ID)
+        await message.reply("✅ Media posted to channel!")
     else:
-        await message.reply("⚠️ Usage: /post <your message>")
-
-@app.on_message(filters.media & filters.user(OWNER_ID))
-async def post_media(client, message: Message):
-    await message.copy(CHANNEL_ID)
-    await message.reply("✅ Media posted to channel!")
+        await message.reply("⚠️ Usage: /post <your message> or reply to media with /post")
 
 # ====================
 # START COMMAND
@@ -86,7 +84,7 @@ async def start_cmd(client: Client, message: Message):
     )
 
     if user.id == OWNER_ID:
-        await message.reply_text("Admin Panel Ready!")
+        await message.reply_text("✅ Admin Panel Ready!")
     else:
         await message.reply_text("Hello! Your message (text/media) will be sent to the admin.")
 
@@ -109,11 +107,11 @@ async def forward_user_msg(client: Client, message: Message):
 
     fwd = await message.forward(OWNER_ID)
     info_text = (
-        f"New Message\n"
-        f"Name: {full_name}\n"
-        f"ID: {user_id}\n"
-        f"Profile: {username}\n"
-        f"Message: {message.text if message.text else '<media>'}"
+        f"📩 New Message\n"
+        f"👤 Name: {full_name}\n"
+        f"🆔 ID: {user_id}\n"
+        f"🔗 Profile: {username}\n"
+        f"💬 Message: {message.text if message.text else '<media>'}"
     )
     await fwd.reply_text(info_text)
 
@@ -134,7 +132,7 @@ async def reply_to_user(client: Client, message: Message):
         text = reply_to.text or ""
         match = re.search(r'ID: (\d+)', text)
         if not match:
-            return await message.reply_text("User ID not found!")
+            return await message.reply_text("⚠️ User ID not found!")
 
         user_id = int(match.group(1))
 
@@ -147,7 +145,7 @@ async def reply_to_user(client: Client, message: Message):
         if message.text:
             await client.send_message(user_id, message.text)
 
-        await message.reply_text("Reply delivered.")
+        await message.reply_text("✅ Reply delivered.")
     except Exception as e:
         await message.reply_text(f"Error: {e}")
 
@@ -171,7 +169,7 @@ async def broadcast_cmd(client: Client, message: Message):
             failed += 1
         await asyncio.sleep(0.05)
 
-    await message.reply_text(f"Broadcast sent to {sent} users, failed: {failed}")
+    await message.reply_text(f"📢 Broadcast sent to {sent} users, failed: {failed}")
 
 # ====================
 # STATS (Detailed)
@@ -196,12 +194,13 @@ async def stats_cmd(client: Client, message: Message):
     # Telegram message limit handling
     chunk = ""
     for line in all_lines:
-        if len(chunk) + len(line) > 4000:  # near limit
-            await message.reply_text(chunk)
+        if len(chunk) + len(line) > 4000:
+            await message.reply_text(chunk, disable_web_page_preview=True)
             chunk = ""
         chunk += line + "\n"
     if chunk:
-        await message.reply_text(chunk)
+        await message.reply_text(chunk, disable_web_page_preview=True)
+
 # ====================
 # CLONE SYSTEM
 # ====================
@@ -212,7 +211,7 @@ async def clone_bot(client: Client, message: Message):
 
     new_token = message.command[1]
     if new_token in clones:
-        return await message.reply_text("Clone bot already running!")
+        return await message.reply_text("⚠️ Clone bot already running!")
 
     try:
         clone_client = Client(
@@ -224,7 +223,7 @@ async def clone_bot(client: Client, message: Message):
         )
         await clone_client.start()
         clones[new_token] = clone_client
-        await message.reply_text(f"Clone Bot started with token ending {new_token[-6:]}")
+        await message.reply_text(f"✅ Clone Bot started with token ending {new_token[-6:]}")
     except Exception as e:
         await message.reply_text(f"Clone failed: {e}")
 
@@ -245,9 +244,13 @@ def run_flask():
 # ====================
 if __name__ == "__main__":
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(send_daily_quote, "cron", hour=7, minute=0)
-    scheduler.start()
+    scheduler.add_job(send_daily_quote, "cron", hour=7, minute=0, timezone="Asia/Kolkata")
 
-    threading.Thread(target=run_flask).start()
-    print("Gemini AI Bot Started with MongoDB + Clone + Motivation System...")
-    app.run()
+    async def main():
+        scheduler.start()
+        threading.Thread(target=run_flask).start()
+        print("Gemini AI Bot Started with MongoDB + Clone + Motivation System...")
+        await app.start()
+        await idle()
+
+    asyncio.run(main())
