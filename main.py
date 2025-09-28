@@ -315,7 +315,7 @@ if __name__ == "__main__":
 
     # Scheduler for daily quote
     scheduler = BackgroundScheduler()
-    scheduler.add_job(send_daily_quote, "cron", hour=7, minute=0, timezone="Asia/Kolkata")
+    scheduler.add_job(send_daily_quote_job, "cron", hour=7, minute=0, timezone="Asia/Kolkata")
     scheduler.start()
 
     async def main():
