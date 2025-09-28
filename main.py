@@ -70,35 +70,46 @@ def run_flask():
 # ====================
 @app.on_message(filters.command("setwelcome") & filters.user(OWNER_ID))
 async def set_welcome(client: Client, message: Message):
-    if not message.reply_to_message:
+    if not message.reply_to_message and "btn=" not in message.text:
         return await message.reply(
-            "⚠️ Reply to a photo/text to set welcome.\nOptional: btn=Text|URL,..."
+            "⚠️ Reply to a photo/text or use btn=Text|URL,... to set welcome message."
         )
 
-    caption = message.reply_to_message.caption or (message.reply_to_message.text if message.reply_to_message.text else None)
-    file_id = message.reply_to_message.photo.file_id if message.reply_to_message.photo else None
+    # Fetch old config
+    old_cfg = welcome_col.find_one({"_id": "welcome"}) or {}
 
-    # Parse inline buttons
-    buttons = []
+    # Caption update
+    caption = old_cfg.get("caption")
+    if message.reply_to_message:
+        caption = message.reply_to_message.caption or (message.reply_to_message.text if message.reply_to_message.text else caption)
+
+    # Photo update
+    photo = old_cfg.get("photo")
+    if message.reply_to_message and message.reply_to_message.photo:
+        photo = message.reply_to_message.photo.file_id
+
+    # Buttons merge
+    buttons = old_cfg.get("buttons", [])
+
     if "btn=" in message.text:
-        btn_text = message.text.split("btn=", maxsplit=1)[1]
+        btn_text = message.text.split("btn=", 1)[1]
+        new_buttons = []
         for pair in btn_text.split(","):
             if "|" not in pair:
                 continue
-            text, url = pair.split("|", maxsplit=1)
-            text = text.strip()
-            url = url.strip()
-            if text and url:
-                buttons.append([InlineKeyboardButton(text, url=url)])
+            text, url = pair.split("|", 1)
+            new_buttons.append([InlineKeyboardButton(text.strip(), url=url.strip())])
+        # Merge: new buttons replace old buttons with same text, else append
+        buttons = new_buttons  # या आप merge logic लगा सकते हो
 
     # Save to DB
     welcome_col.update_one(
         {"_id": "welcome"},
-        {"$set": {"caption": caption, "photo": file_id, "buttons": buttons}},
+        {"$set": {"caption": caption, "photo": photo, "buttons": buttons}},
         upsert=True
     )
-    await message.reply("✅ Welcome message set successfully!")
 
+    await message.reply("✅ Welcome message updated successfully!")
 # ====================
 # /delwelcome → Delete Welcome
 # ====================
