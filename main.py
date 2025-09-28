@@ -65,63 +65,48 @@ def home():
 def run_flask():
     flask_app.run(host="0.0.0.0", port=PORT)
 
-# ====================
-# /setwelcome → Photo + Caption + Buttons
-# ====================
-@app.on_message(filters.command("setwelcome") & filters.user(OWNER_ID))
-async def set_welcome(client: Client, message: Message):
-    if not message.reply_to_message and "btn=" not in message.text:
-        return await message.reply(
-            "⚠️ Reply to a photo/text or use btn=Text|URL,... to set welcome message."
-        )
-
-    # Fetch old config
-    old_cfg = welcome_col.find_one({"_id": "welcome"}) or {}
-
-    # Caption update
-    caption = old_cfg.get("caption")
-    if message.reply_to_message:
-        caption = message.reply_to_message.caption or (message.reply_to_message.text if message.reply_to_message.text else caption)
-
-    # Photo update
-    photo = old_cfg.get("photo")
-    if message.reply_to_message and message.reply_to_message.photo:
-        photo = message.reply_to_message.photo.file_id
-
-    # Buttons merge
-    buttons = old_cfg.get("buttons", [])
-
-    if "btn=" in message.text:
-        btn_text = message.text.split("btn=", 1)[1]
-        new_buttons = []
-        for pair in btn_text.split(","):
-            if "|" not in pair:
-                continue
-            text, url = pair.split("|", 1)
-            new_buttons.append([InlineKeyboardButton(text.strip(), url=url.strip())])
-        # Merge: new buttons replace old buttons with same text, else append
-        buttons = new_buttons  # या आप merge logic लगा सकते हो
-
-    # Save to DB
-    welcome_col.update_one(
-        {"_id": "welcome"},
-        {"$set": {"caption": caption, "photo": photo, "buttons": buttons}},
-        upsert=True
-    )
-
-    await message.reply("✅ Welcome message updated successfully!")# ====================
-# /delwelcome → Delete Welcome
-# ====================
-@app.on_message(filters.command("delwelcome") & filters.user(OWNER_ID))
-async def del_welcome(client: Client, message: Message):
-    result = welcome_col.delete_one({"_id": "welcome"})
-    if result.deleted_count > 0:
-        await message.reply("🗑️ Welcome message deleted. Default message will show now.")
-    else:
-        await message.reply("⚠️ No welcome message was set previously.")
+from pyrogram import Client, filters
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pymongo import MongoClient
+from datetime import datetime
+import threading
+from flask import Flask
+from config import API_ID, API_HASH, BOT_TOKEN, OWNER_ID, PORT, MONGO_URI
 
 # ====================
-# /fsub → Force Subscribe On/Off
+# DATABASE
+# ====================
+client_db = MongoClient(MONGO_URI)
+db = client_db["gemini_bot_db"]
+
+user_profiles_col = db["user_profiles"]
+fsub_col = db["fsub_config"]  # Force Subscribe
+
+# ====================
+# BOT CLIENT
+# ====================
+app = Client(
+    "gemini_bot",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=BOT_TOKEN,
+    workers=100
+)
+
+# ====================
+# FLASK
+# ====================
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def home():
+    return "Bot running..."
+
+def run_flask():
+    flask_app.run(host="0.0.0.0", port=PORT)
+
+# ====================
+# /fsub → Force Subscribe
 # ====================
 @app.on_message(filters.command("fsub") & filters.user(OWNER_ID))
 async def set_fsub(client: Client, message: Message):
@@ -139,40 +124,49 @@ async def set_fsub(client: Client, message: Message):
         await message.reply("⚠️ Invalid format. Use `/fsub on @Channel` or `/fsub off`")
 
 # ====================
-# /start → Show Welcome + Force Subscribe
+# /start → Force Subscribe + Welcome
 # ====================
 @app.on_message(filters.command("start") & filters.private)
 async def start_cmd(client: Client, message: Message):
-    # Force Subscribe check
+    user = message.from_user
+    user_profiles_col.update_one(
+        {"user_id": user.id},
+        {"$set": {
+            "user_id": user.id,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "username": user.username,
+            "joined_at": datetime.utcnow()
+        }},
+        upsert=True
+    )
+
+    # Check Force Subscribe
     fsub_cfg = fsub_col.find_one({"_id": "fsub"}) or {"status": False}
     if fsub_cfg.get("status"):
         channel = fsub_cfg.get("channel")
         try:
-            member = await client.get_chat_member(channel, message.from_user.id)
+            member = await client.get_chat_member(channel, user.id)
             if member.status not in ["member", "administrator", "creator"]:
-                btn = InlineKeyboardMarkup([[InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{channel.strip('@')}")]])
-                return await message.reply(f"⚠️ You must join {channel} to use this bot.", reply_markup=btn)
+                # User not joined
+                btn = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{channel.strip('@')}")]
+                ])
+                return await message.reply(
+                    f"⚠️ You must join {channel} to use this bot.",
+                    reply_markup=btn
+                )
         except:
             return await message.reply("⚠️ Invalid channel or I’m not admin there.")
 
-    # Show Welcome
-    config = welcome_col.find_one({"_id": "welcome"})
-    if config:
-        caption = config.get("caption", "👋 Welcome!")
-        photo = config.get("photo", None)
-        buttons = config.get("buttons", [])
-        markup = InlineKeyboardMarkup(buttons) if buttons else None
-
-        if photo:
-            await client.send_photo(message.chat.id, photo=photo, caption=caption, reply_markup=markup)
-        else:
-            await client.send_message(message.chat.id, text=caption, reply_markup=markup)
+    # If user is owner
+    if user.id == OWNER_ID:
+        await message.reply("✅ Ready!")
     else:
-        # Default welcome
-        await client.send_message(
-            message.chat.id,
-            "👋 Welcome to the bot!\n📢 This is Radha’s Bot.\nThe Owner will reply soon, ask your questions and doubts."
+        await message.reply(
+            "👋 Hello! Your message (text/media) will be sent to the admin."
         )
+
 
 
 # ====================
