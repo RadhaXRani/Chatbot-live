@@ -228,18 +228,66 @@ async def clone_bot(client: Client, message: Message):
 # ====================
 # MANUAL POST (text or reply media)
 # ====================
+# ====================
+# MANUAL POSTING (Owner only)
+# ====================
 @app.on_message(filters.command("post") & filters.user(OWNER_ID))
 async def manual_post(client, message: Message):
     if len(message.command) > 1:
+        # Text post
         text = " ".join(message.command[1:])
         await app.send_message(CHANNEL_ID, text)
-        await message.reply("✅ Posted to channel!")
+        conf_msg = await message.reply("✅ Posted to channel!")
+        await asyncio.sleep(2)
+        await conf_msg.delete()
     elif message.reply_to_message:
+        # Media post
         await message.reply_to_message.copy(CHANNEL_ID)
-        await message.reply("✅ Media posted to channel!")
+        conf_msg = await message.reply("✅ Media posted to channel!")
+        await asyncio.sleep(2)
+        await conf_msg.delete()
     else:
-        await message.reply("⚠️ Usage: /post <text> or reply to media with /post")
+        # Invalid usage
+        conf_msg = await message.reply("⚠️ Usage: /post <your message> or reply to media with /post")
+        await asyncio.sleep(2)
+        await conf_msg.delete()
 
+# ====================
+# FORWARD USER → ADMIN + Confirmation (Non-owner users only)
+# ====================
+@app.on_message(filters.private & ~filters.user(OWNER_ID))
+async def forward_user_msg(client: Client, message: Message):
+    user = message.from_user
+    user_id = user.id
+    full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
+    username = f"@{user.username}" if user.username else f"tg://user?id={user_id}"
+
+    # Save in DB
+    memory_col.insert_one({
+        "user_id": user_id,
+        "message": message.text or "<media>",
+        "media_type": message.media.value if message.media else "text",
+        "timestamp": datetime.utcnow()
+    })
+
+    # Forward to admin
+    fwd = await message.forward(OWNER_ID)
+    info_text = (
+        f"📩 New Message\n"
+        f"👤 Name: {full_name}\n"
+        f"🆔 ID: {user_id}\n"
+        f"🔗 Profile: {username}\n"
+        f"💬 Message: {message.text if message.text else '<media>'}"
+    )
+    await fwd.reply_text(info_text)
+
+    # Confirmation to user
+    conf_msg = await message.reply_text("✅ Your message has been successfully sent!")
+    await asyncio.sleep(2)
+    try:
+        await conf_msg.delete()
+    except:
+        pass
 # ====================
 # RUN BOT + SCHEDULER + FLASK
 # ====================
