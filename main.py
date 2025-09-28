@@ -292,13 +292,21 @@ async def forward_user_msg(client: Client, message: Message):
 # RUN BOT + SCHEDULER + FLASK
 # ====================
 if __name__ == "__main__":
-    # Start Flask in background thread
+    # Start Flask
     threading.Thread(target=run_flask).start()
 
-    # Scheduler for daily quote
+    # Scheduler
     scheduler = BackgroundScheduler()
-    scheduler.add_job(send_daily_quote_job, "cron", hour=7, minute=0)  # 7:00 AM
+    scheduler.add_job(send_daily_quote_job, "cron", hour=7, minute=0)
     scheduler.start()
 
-    print("✅ Gemini AI Bot Started with MongoDB + Clone + Motivation System...")
-    app.run()
+    async def main():
+        # Start bot
+        await app.start()
+        # Send deployment success message
+        await app.send_message(CHANNEL_ID, "✅ Gemini AI Bot successfully deployed and running!")
+        print("✅ Gemini AI Bot Started...")
+        # Keep bot alive
+        await idle()
+
+    asyncio.run(main())
