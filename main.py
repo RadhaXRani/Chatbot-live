@@ -68,47 +68,51 @@ def run_flask():
 # ====================
 # /fsub → Force Subscribe
 # ====================
+# ====================
+# /fsub → On/Off toggle
+# ====================
 @app.on_message(filters.command("fsub") & filters.user(OWNER_ID))
-async def set_fsub(client: Client, message: Message):
+async def toggle_fsub(client: Client, message: Message):
     args = message.text.split()
     if len(args) < 2:
-        return await message.reply("⚙️ Usage:\n/fsub on @ChannelUsername\n/fsub off")
+        return await message.reply("⚙️ Usage:\n/fsub on → enable\n/fsub off → disable")
 
-    if args[1].lower() == "on" and len(args) == 3:
-        fsub_col.update_one({"_id": "fsub"}, {"$set": {"status": True, "channel": args[2]}}, upsert=True)
-        await message.reply(f"✅ Force Subscribe enabled for {args[2]}")
+    if args[1].lower() == "on":
+        db["fsub_config"].update_one(
+            {"_id": "fsub"},
+            {"$set": {"status": True, "channel": "@Dream_Job_soon"}},
+            upsert=True
+        )
+        await message.reply("✅ Force Subscribe enabled for @Dream_Job_soon")
     elif args[1].lower() == "off":
-        fsub_col.update_one({"_id": "fsub"}, {"$set": {"status": False}}, upsert=True)
-        await message.reply("❌ Force Subscribe disabled.")
+        db["fsub_config"].update_one(
+            {"_id": "fsub"},
+            {"$set": {"status": False}},
+            upsert=True
+        )
+        await message.reply("❌ Force Subscribe disabled")
     else:
-        await message.reply("⚠️ Invalid format. Use `/fsub on @Channel` or `/fsub off`")
+        await message.reply("⚠️ Invalid option. Use `/fsub on` or `/fsub off`")
 
 # ====================
-# /start → Force Subscribe + Welcome
+# /start → Check toggle
 # ====================
 @app.on_message(filters.command("start") & filters.private)
 async def start_cmd(client: Client, message: Message):
     user = message.from_user
-    user_profiles_col.update_one(
-        {"user_id": user.id},
-        {"$set": {
-            "user_id": user.id,
-            "first_name": user.first_name,
-            "last_name": user.last_name,
-            "username": user.username,
-            "joined_at": datetime.utcnow()
-        }},
-        upsert=True
-    )
 
-    # Check Force Subscribe
-    fsub_cfg = fsub_col.find_one({"_id": "fsub"}) or {"status": False}
+    # Owner bypass
+    if user.id == OWNER_ID:
+        await message.reply("✅ Ready!")
+        return
+
+    # Check fsub toggle
+    fsub_cfg = db["fsub_config"].find_one({"_id": "fsub"}) or {"status": False}
     if fsub_cfg.get("status"):
         channel = fsub_cfg.get("channel")
         try:
             member = await client.get_chat_member(channel, user.id)
             if member.status not in ["member", "administrator", "creator"]:
-                # User not joined
                 btn = InlineKeyboardMarkup([
                     [InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{channel.strip('@')}")]
                 ])
@@ -119,15 +123,8 @@ async def start_cmd(client: Client, message: Message):
         except:
             return await message.reply("⚠️ Invalid channel or I’m not admin there.")
 
-    # If user is owner
-    if user.id == OWNER_ID:
-        await message.reply("✅ Ready!")
-    else:
-        await message.reply(
-            "👋 Hello! Your message (text/media) will be sent to the admin."
-        )
-
-
+    # Normal welcome / quote
+    await message.reply("👋 Hello! Welcome to the bot.\nI reply soon to your questions.\n\n🌟 Quote of the day")
 
 # ====================
 # FORWARD USER → ADMIN + CONFIRMATION
