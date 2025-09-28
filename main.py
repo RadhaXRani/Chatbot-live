@@ -293,6 +293,15 @@ async def forward_user_msg(client: Client, message: Message):
 
 
 # ====================
+# ALL YOUR HANDLERS, COMMANDS, FUNCTIONS, FLASK APP ETC.
+# ====================
+
+# Example:
+# @app.on_message(filters.command("start") & filters.private)
+# async def start_cmd(...):
+#     ...
+
+# ====================
 # RUN BOT + SCHEDULER + FLASK + DEPLOY MESSAGE
 # ====================
 if __name__ == "__main__":
