@@ -7,6 +7,8 @@ import threading
 import os
 from datetime import datetime
 import re
+import random
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from config import API_ID, API_HASH, BOT_TOKEN, OWNER_ID, PORT, MONGO_URI
 
 # ====================
@@ -32,6 +34,40 @@ app = Client(
 clones = {}  # track clones
 
 # ====================
+# MOTIVATION SYSTEM
+# ====================
+CHANNEL_ID = -1002966725498  # Your channel ID
+
+quotes = [
+    "Dream, dream, dream. Dreams transform into thoughts and thoughts result in action. – A.P.J. Abdul Kalam",
+    "Be the change that you wish to see in the world. – Mahatma Gandhi",
+    "Arise, awake, and stop not until the goal is reached. – Swami Vivekananda",
+    "Excellence is not a skill. It is an attitude. – Ralph Marston",
+    "Small aim is a crime; have great aim. – A.P.J. Abdul Kalam"
+]
+
+async def send_daily_quote():
+    quote = random.choice(quotes)
+    await app.send_message(CHANNEL_ID, quote)
+
+# ====================
+# MANUAL POSTING
+# ====================
+@app.on_message(filters.command("post") & filters.user(OWNER_ID))
+async def manual_post(client, message: Message):
+    if len(message.command) > 1:
+        text = " ".join(message.command[1:])
+        await app.send_message(CHANNEL_ID, text)
+        await message.reply("✅ Posted to channel!")
+    else:
+        await message.reply("⚠️ Usage: /post <your message>")
+
+@app.on_message(filters.media & filters.user(OWNER_ID))
+async def post_media(client, message: Message):
+    await message.copy(CHANNEL_ID)
+    await message.reply("✅ Media posted to channel!")
+
+# ====================
 # START COMMAND
 # ====================
 @app.on_message(filters.command("start") & filters.private)
@@ -55,7 +91,7 @@ async def start_cmd(client: Client, message: Message):
         await message.reply_text("Hello! Your message (text/media) will be sent to the admin.")
 
 # ====================
-# FORWARD USER → ADMIN + CONFIRMATION
+# FORWARD USER → ADMIN
 # ====================
 @app.on_message(filters.private & ~filters.user(OWNER_ID))
 async def forward_user_msg(client: Client, message: Message):
@@ -64,7 +100,6 @@ async def forward_user_msg(client: Client, message: Message):
     full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
     username = f"@{user.username}" if user.username else f"tg://user?id={user_id}"
 
-    # Save in DB
     memory_col.insert_one({
         "user_id": user_id,
         "message": message.text or "<media>",
@@ -72,9 +107,7 @@ async def forward_user_msg(client: Client, message: Message):
         "timestamp": datetime.utcnow()
     })
 
-    # Forward to admin
     fwd = await message.forward(OWNER_ID)
-
     info_text = (
         f"New Message\n"
         f"Name: {full_name}\n"
@@ -84,7 +117,6 @@ async def forward_user_msg(client: Client, message: Message):
     )
     await fwd.reply_text(info_text)
 
-    # Send confirmation to user (auto delete after 5 sec)
     conf_msg = await message.reply_text("✅ Your message has been successfully sent!")
     await asyncio.sleep(2)
     try:
@@ -93,7 +125,7 @@ async def forward_user_msg(client: Client, message: Message):
         pass
 
 # ====================
-# ADMIN REPLY → USER (plain text only)
+# ADMIN REPLY → USER
 # ====================
 @app.on_message(filters.private & filters.user(OWNER_ID) & filters.reply)
 async def reply_to_user(client: Client, message: Message):
@@ -106,24 +138,21 @@ async def reply_to_user(client: Client, message: Message):
 
         user_id = int(match.group(1))
 
-        # Save admin reply in DB
         memory_col.insert_one({
             "user_id": user_id,
             "admin_reply": message.text or "<text only>",
             "timestamp": datetime.utcnow()
         })
 
-        # Send plain text to user
         if message.text:
             await client.send_message(user_id, message.text)
 
         await message.reply_text("Reply delivered.")
-
     except Exception as e:
         await message.reply_text(f"Error: {e}")
 
 # ====================
-# BROADCAST (text only)
+# BROADCAST
 # ====================
 @app.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
 async def broadcast_cmd(client: Client, message: Message):
@@ -145,13 +174,34 @@ async def broadcast_cmd(client: Client, message: Message):
     await message.reply_text(f"Broadcast sent to {sent} users, failed: {failed}")
 
 # ====================
-# STATS
+# STATS (Detailed)
 # ====================
 @app.on_message(filters.command("stats") & filters.user(OWNER_ID))
 async def stats_cmd(client: Client, message: Message):
     total_users = user_profiles_col.count_documents({})
-    await message.reply_text(f"Total users: {total_users}")
+    text = f"📊 Total users: {total_users}\n\n"
 
+    users = user_profiles_col.find().sort("joined_at", -1)  # latest first
+    all_lines = []
+
+    for u in users:
+        user_id = u.get("user_id")
+        fname = u.get("first_name", "")
+        lname = u.get("last_name", "")
+        uname = f"@{u['username']}" if u.get("username") else f"[Link](tg://user?id={user_id})"
+        joined = u.get("joined_at", "")
+        line = f"👤 {fname} {lname}\n🆔 {user_id}\n🔗 {uname}\n📅 {joined}\n"
+        all_lines.append(line)
+
+    # Telegram message limit handling
+    chunk = ""
+    for line in all_lines:
+        if len(chunk) + len(line) > 4000:  # near limit
+            await message.reply_text(chunk)
+            chunk = ""
+        chunk += line + "\n"
+    if chunk:
+        await message.reply_text(chunk)
 # ====================
 # CLONE SYSTEM
 # ====================
@@ -185,15 +235,19 @@ flask_app = Flask(__name__)
 
 @flask_app.route('/')
 def home():
-    return "Gemini AI Bot running with MongoDB + Clone System!"
+    return "Gemini AI Bot running with MongoDB + Clone + Motivation!"
 
 def run_flask():
     flask_app.run(host="0.0.0.0", port=PORT)
 
 # ====================
-# RUN BOT + FLASK
+# RUN BOT + SCHEDULER + FLASK
 # ====================
 if __name__ == "__main__":
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(send_daily_quote, "cron", hour=7, minute=0)
+    scheduler.start()
+
     threading.Thread(target=run_flask).start()
-    print("Gemini AI Bot Started with MongoDB + Clone System...")
+    print("Gemini AI Bot Started with MongoDB + Clone + Motivation System...")
     app.run()
