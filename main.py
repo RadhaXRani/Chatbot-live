@@ -66,8 +66,84 @@ def run_flask():
     flask_app.run(host="0.0.0.0", port=PORT)
 
 # ====================
+# ====================
+# /ban → Ban user
+# ====================
+@app.on_message(filters.command("ban") & filters.user(OWNER_ID))
+async def ban_user(client: Client, message: Message):
+    if len(message.command) < 2:
+        return await message.reply("Usage: /ban <user_id>")
+
+    try:
+        user_id = int(message.command[1])
+        user_profiles_col.update_one(
+            {"user_id": user_id},
+            {"$set": {"banned": True}},
+            upsert=True
+        )
+        await message.reply(f"⛔ User {user_id} has been banned!")
+    except ValueError:
+        await message.reply("⚠️ Invalid user ID.")
+
+# ====================
+# /unban → Unban user
+# ====================
+@app.on_message(filters.command("unban") & filters.user(OWNER_ID))
+async def unban_user(client: Client, message: Message):
+    if len(message.command) < 2:
+        return await message.reply("Usage: /unban <user_id>")
+
+    try:
+        user_id = int(message.command[1])
+        user_profiles_col.update_one(
+            {"user_id": user_id},
+            {"$set": {"banned": False}},
+        )
+        await message.reply(f"✅ User {user_id} has been unbanned!")
+    except ValueError:
+        await message.reply("⚠️ Invalid user ID.")
 
 
+@app.on_message(filters.private & ~filters.user(OWNER_ID))
+async def handle_user_messages(client: Client, message: Message):
+    user_id = message.from_user.id
+    user = user_profiles_col.find_one({"user_id": user_id})
+
+    # Check ban
+    if user and user.get("banned", False):
+        try:
+            await message.reply("🚫 You are banned from using this bot.")
+        except:
+            pass
+        return  # stop processing further
+
+    # Existing forwarding code
+    full_name = f"{message.from_user.first_name or ''} {message.from_user.last_name or ''}".strip()
+    username = f"@{message.from_user.username}" if message.from_user.username else f"tg://user?id={user_id}"
+
+    memory_col.insert_one({
+        "user_id": user_id,
+        "message": message.text or "<media>",
+        "media_type": message.media.value if message.media else "text",
+        "timestamp": datetime.utcnow()
+    })
+
+    fwd = await message.forward(OWNER_ID)
+    info_text = (
+        f"📩 New Message\n"
+        f"👤 Name: {full_name}\n"
+        f"🆔 ID: {user_id}\n"
+        f"🔗 Profile: {username}\n"
+        f"💬 Message: {message.text if message.text else '<media>'}"
+    )
+    await fwd.reply_text(info_text)
+
+    conf_msg = await message.reply_text("✅ Your message has been successfully sent!")
+    await asyncio.sleep(2)
+    try:
+        await conf_msg.delete()
+    except:
+        pass
 # ===============================
 # /setwelcome → Set Welcome
 # ===============================
