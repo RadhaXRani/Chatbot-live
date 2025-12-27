@@ -65,6 +65,66 @@ def home():
 def run_flask():
     flask_app.run(host="0.0.0.0", port=PORT)
 
+
+def start_clone_bot(bot_token: str):
+    async def runner():
+        clone_app = Client(
+            f"clone_{bot_token[-6:]}",
+            api_id=API_ID,
+            api_hash=API_HASH,
+            bot_token=bot_token,
+            workers=50
+        )
+
+        # 🔹 SAME handlers attach karo
+        clone_app.add_handler(
+            MessageHandler(
+                start_cmd,
+                filters.command("start") & filters.private
+            )
+        )
+
+        await clone_app.start()
+        print(f"🤖 Clone started: {bot_token[-6:]}")
+        await idle()
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(runner())
+
+
+
+def reset_and_setup():
+    # ❌ Delete old configs
+    welcome_col.delete_many({})
+    fsub_col.delete_many({})
+
+    # ✅ Insert fresh welcome config
+    welcome_col.insert_one({
+        "_id": "welcome",
+        "photo": "https://i.ibb.co/MkHGvrhL/photo-2025-08-15-12-04-59-7555109221855920164.jpg",
+        "caption": "👋 Welcome ❤️\nAsk your questions or doubts, I will reply soon!",
+        "buttons": [
+            [
+                InlineKeyboardButton(
+                    "Smile Plz 🫰🏻",
+                    url="https://t.me/Dream_Job_soon"
+                )
+            ]
+        ]
+    })
+
+    # ✅ Insert fresh fsub config
+    fsub_col.insert_one({
+        "_id": "fsub",
+        "enabled": False,
+        "channels": []
+    })
+
+    logger.info("♻️ Old auto-set configs removed & new configs applied")
+
+
+
 # ====================
 # ====================
 # /ban → Ban user
@@ -360,28 +420,24 @@ async def stats_cmd(client: Client, message: Message):
 # CLONE SYSTEM
 # ====================
 @app.on_message(filters.command("clone") & filters.user(OWNER_ID))
-async def clone_bot(client: Client, message: Message):
+async def clone_bot(client, message: Message):
     if len(message.command) < 2:
         return await message.reply_text("Usage: /clone BOT_TOKEN")
 
-    new_token = message.command[1]
-    if new_token in clones:
-        return await message.reply_text("⚠️ Clone bot already running!")
+    token = message.command[1]
 
-    try:
-        clone_client = Client(
-            f"clone_{new_token[:6]}",
-            api_id=API_ID,
-            api_hash=API_HASH,
-            bot_token=new_token,
-            workers=100
-        )
-        await clone_client.start()
-        clones[new_token] = clone_client
-        await message.reply_text(f"✅ Clone Bot started with token ending {new_token[-6:]}")
-    except Exception as e:
-        await message.reply_text(f"Clone failed: {e}")
+    if token in clones:
+        return await message.reply_text("⚠️ Clone already running")
 
+    t = threading.Thread(
+        target=start_clone_bot,
+        args=(token,),
+        daemon=True
+    )
+    t.start()
+
+    clones[token] = t
+    await message.reply_text("✅ Clone bot started successfully")
 # ====================
 # MANUAL POST (text or reply media)
 # ====================
@@ -461,26 +517,23 @@ async def forward_user_msg(client: Client, message: Message):
 # RUN BOT + SCHEDULER + FLASK + DEPLOY MESSAGE
 # ====================
 if __name__ == "__main__":
-    import threading
-    from apscheduler.schedulers.background import BackgroundScheduler
 
-    # Flask background
+    # 🔥 RESET old auto configs & apply new ones
+    reset_and_setup()
+
+    # Flask
     threading.Thread(target=run_flask, daemon=True).start()
 
     # Scheduler
     scheduler = BackgroundScheduler()
-    scheduler.add_job(send_daily_quote_job, "cron", hour=7, minute=0, timezone="Asia/Kolkata")
+    scheduler.add_job(
+        send_daily_quote_job,
+        "cron",
+        hour=7,
+        minute=0,
+        timezone="Asia/Kolkata"
+    )
     scheduler.start()
 
-    # Deploy success message after bot starts
-    def send_deploy_message():
-        import asyncio
-        loop = asyncio.get_event_loop()
-        loop.create_task(app.send_message("@You_Are_A_Officer", "✅ Gemini AI Bot successfully deployed and running!"))
-
-    # Schedule deploy message 5 sec after start
-    threading.Timer(5, send_deploy_message).start()
-
-    print("✅ Gemini AI Bot Started with MongoDB + Clone + Motivation System...")
-    # Start bot (handlers will now work)
+    print("✅ Gemini AI Bot Started fresh with new auto config...")
     app.run()
