@@ -9,6 +9,7 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from apscheduler.schedulers.background import BackgroundScheduler
 import threading
 import requests
+from pyrogram.types import BotCommand
 
 # ====================
 # CONFIG (Set your own)
@@ -319,26 +320,6 @@ async def stats_cmd(client: Client, message: Message):
         chunk += line + "\n"
     if chunk: await message.reply_text(chunk, disable_web_page_preview=True)    
     
-    
-# ====================
-# BOT COMMANDS (AUTO SET)
-# ====================
-user_commands = [
-    BotCommand("start", "👋 Start & Register"),
-]
-
-admin_commands = [
-    BotCommand("ban", "⛔ 𝗕𝗮𝗻 𝗮 𝗨𝘀𝗲𝗿 [ADMIN]"),
-    BotCommand("unban", "✅ 𝗨𝗻𝗯𝗮𝗻 𝗮 𝗨𝘀𝗲𝗿 [ADMIN]"),
-    BotCommand("count_banned", "📛 𝗖𝗵𝗲𝗰𝗸 𝗕𝗮𝗻𝗻𝗲𝗱 𝗨𝘀𝗲𝗿𝘀 [ADMIN]"),
-    BotCommand("broadcast", "📢 𝗕𝗿𝗼𝗮𝗱𝗰𝗮𝘀𝘁 𝗮 𝗠𝗲𝘀𝘀𝗮𝗴𝗲 [ADMIN]"),
-    BotCommand("stats", "📊 Get Detailed User Stats [ADMIN]"),
-    BotCommand("setwelcome", "👋 Set Welcome Message [ADMIN]"),
-    BotCommand("delwelcome", "🗑️ Delete Welcome Message [ADMIN]"),
-    BotCommand("reply", "✉️ Reply To User [ADMIN]")
-]
-
-await self.set_bot_commands(user_commands + admin_commands)
 
 # ====================
 # DAILY MOTIVATION FUNCTIONS
@@ -431,24 +412,35 @@ async def delete_motivation_time(client: Client, message: Message):
 # ====================
 # RUN BOT
 # ====================
-async def main():
-    # Set commands first
-    await set_bot_commands()
-    
-    # Start Flask in background
+
+async def set_bot_commands():
+    user_commands = [
+        BotCommand("start", "👋 Start & Register"),
+    ]
+    admin_commands = [
+        BotCommand("ban", "⛔ Ban a User [ADMIN]"),
+        BotCommand("unban", "✅ Unban a User [ADMIN]"),
+        BotCommand("broadcast", "📢 Broadcast a Message [ADMIN]"),
+        BotCommand("stats", "📊 Get Detailed User Stats [ADMIN]"),
+        BotCommand("setwelcome", "👋 Set Welcome Message [ADMIN]"),
+        BotCommand("delwelcome", "🗑️ Delete Welcome Message [ADMIN]"),
+        BotCommand("reply", "✉️ Reply To User [ADMIN]")
+    ]
+    await app.set_bot_commands(user_commands + admin_commands)
+
+if __name__ == "__main__":
+    import asyncio
+
+    # Set commands before running bot
+    asyncio.run(set_bot_commands())
+
+    # Flask background
     threading.Thread(target=run_flask, daemon=True).start()
-    
-    # Scheduler start
+
+    # Scheduler
     scheduler = BackgroundScheduler()
     scheduler.add_job(send_daily_quote_job, "cron", hour=7, minute=0, timezone="Asia/Kolkata")
     scheduler.start()
 
     print("✅ Gemini AI Bot Started with MongoDB + Clone + Motivation System...")
-    # Start the bot
-    await app.start()
-    print("Bot is now running...")
-    await app.idle()  # Keeps bot running until Ctrl+C
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    app.run()
