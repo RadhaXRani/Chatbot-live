@@ -117,7 +117,24 @@ async def unban_user(client: Client, message: Message):
     except ValueError:
         await message.reply("⚠️ Invalid user ID.")
         
-                        
+
+# ====================
+# /userstats → Show total, active, banned users
+# ====================
+@app.on_message(filters.command("userstats") & filters.user(OWNER_ID))
+async def userstats_cmd(client: Client, message: Message):
+    total_users = user_profiles_col.count_documents({})
+    banned_users = user_profiles_col.count_documents({"banned": True})
+    active_users = total_users - banned_users
+
+    text = (
+        f"📊 User Statistics 📊\n\n"
+        f"👥 Total Users: {total_users}\n"
+        f"✅ Active Users: {active_users}\n"
+        f"🚫 Banned Users: {banned_users}"
+    )
+
+    await message.reply_text(text)
 # ====================
 # /setwelcome → Set Welcome
 # ====================
