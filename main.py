@@ -189,21 +189,48 @@ async def del_welcome(client: Client, message: Message):
 @app.on_message(filters.command("start") & filters.private)
 async def start_cmd(client: Client, message: Message):
     user = message.from_user
+    user_id = user.id
+    first_name = user.first_name or ""
+    last_name = user.last_name or ""
+    username = user.username or ""
+
+    # =========================
+    # Save user in DB
+    # =========================
     user_profiles_col.update_one(
-        {"user_id": user.id},
+        {"user_id": user_id},
         {"$set": {
-            "user_id": user.id,
-            "first_name": user.first_name,
-            "last_name": user.last_name,
-            "username": user.username,
+            "user_id": user_id,
+            "first_name": first_name,
+            "last_name": last_name,
+            "username": username,
             "joined_at": datetime.utcnow()
         }},
         upsert=True
     )
 
+    # =========================
+    # Notify OWNER
+    # =========================
+    try:
+        profile_link = f"@{username}" if username else f"tg://user?id={user_id}"
+        notice_text = (
+            f"👤 New User Started Bot\n"
+            f"🆔 ID: {user_id}\n"
+            f"Name: {first_name} {last_name}\n"
+            f"Profile: {profile_link}\n"
+            f"Joined At: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        await client.send_message(OWNER_ID, notice_text)
+    except:
+        pass
+
+    # =========================
+    # Send Welcome
+    # =========================
     config = welcome_col.find_one({"_id": "welcome"})
     if config:
-        caption = config.get("caption", f"👋 Welcome {user.first_name}!")
+        caption = config.get("caption", f"👋 Welcome {first_name}!")
         photo = config.get("photo", None)
         buttons = config.get("buttons", [])
         markup = InlineKeyboardMarkup(buttons) if buttons else None
@@ -214,9 +241,33 @@ async def start_cmd(client: Client, message: Message):
     else:
         default_photo = "https://i.ibb.co/MkHGvrhL/photo-2025-08-15-12-04-59-7555109221855920164.jpg"
         default_buttons = [[InlineKeyboardButton("Smile Plz 🫰🏻", url="https://t.me/Dream_Job_soon")]]
-        default_caption = f"👋 Welcome {user.first_name} ❤️\nAsk your questions or doubts, I will reply soon!"
+        default_caption = f"👋 Welcome {first_name} ❤️\nAsk your questions or doubts, I will reply soon!"
         await client.send_photo(message.chat.id, photo=default_photo, caption=default_caption,
                                 reply_markup=InlineKeyboardMarkup(default_buttons))
+
+
+@app.on_message(filters.command("allusers") & filters.user(OWNER_ID))
+async def all_users_cmd(client: Client, message: Message):
+    users = user_profiles_col.find()
+    if not users:
+        return await message.reply("⚠️ No users found in database.")
+
+    all_lines = []
+    for u in users:
+        user_id = u.get("user_id")
+        first_name = u.get("first_name", "")
+        last_name = u.get("last_name", "")
+        line = f"👤 {first_name} {last_name} | 🆔 {user_id}"
+        all_lines.append(line)
+
+    # Agar bahut users hai, file me bhej dete hai
+    if len(all_lines) > 50:
+        file_path = "users_list.txt"
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(all_lines))
+        await message.reply_document(file_path, caption=f"📄 Total Users: {len(all_lines)}")
+    else:
+        await message.reply("\n".join(all_lines))
 
 # ====================
 # FORWARD USER → ADMIN + CONFIRMATION
