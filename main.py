@@ -234,7 +234,7 @@ async def start_cmd(client: Client, message: Message):
             await client.send_message(message.chat.id, text=caption, reply_markup=markup)
     else:
         default_photo = "https://i.ibb.co/MkHGvrhL/photo-2025-08-15-12-04-59-7555109221855920164.jpg"
-        default_buttons = [[InlineKeyboardButton("Smile Plz 🫰🏻", url="https://t.me/Dream_Job_soon")]]
+        default_buttons = [[InlineKeyboardButton("Smile Plz 🫰🏻", url="https://t.me/always_krishna")]]
         default_caption = f"👋 Welcome {first_name} ❤️\nAsk your questions or doubts, I will reply soon!"
         await client.send_photo(message.chat.id, photo=default_photo, caption=default_caption,
                                 reply_markup=InlineKeyboardMarkup(default_buttons))
