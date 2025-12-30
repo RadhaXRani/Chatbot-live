@@ -190,40 +190,34 @@ async def del_welcome(client: Client, message: Message):
 async def start_cmd(client: Client, message: Message):
     user = message.from_user
     user_id = user.id
-    first_name = user.first_name or ""
-    last_name = user.last_name or ""
-    username = user.username or ""
 
-    # =========================
-    # Save user in DB
-    # =========================
+    # Check if user already exists
+    is_new_user = not user_profiles_col.find_one({"user_id": user_id})
+
+    # Save/update user in DB
     user_profiles_col.update_one(
         {"user_id": user_id},
         {"$set": {
             "user_id": user_id,
-            "first_name": first_name,
-            "last_name": last_name,
-            "username": username,
+            "first_name": user.first_name or "",
+            "last_name": user.last_name or "",
+            "username": user.username or "",
             "joined_at": datetime.utcnow()
         }},
         upsert=True
     )
 
-    # =========================
-    # Notify OWNER
-    # =========================
-    try:
-        profile_link = f"@{username}" if username else f"tg://user?id={user_id}"
+    # Only notify OWNER if user is new
+    if is_new_user:
+        profile_link = f"@{user.username}" if user.username else f"tg://user?id={user_id}"
         notice_text = (
             f"👤 New User Started Bot\n"
             f"🆔 ID: {user_id}\n"
-            f"Name: {first_name} {last_name}\n"
+            f"Name: {user.first_name or ''} {user.last_name or ''}\n"
             f"Profile: {profile_link}\n"
             f"Joined At: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}"
         )
         await client.send_message(OWNER_ID, notice_text)
-    except:
-        pass
 
     # =========================
     # Send Welcome
