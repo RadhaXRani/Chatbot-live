@@ -431,10 +431,24 @@ async def delete_motivation_time(client: Client, message: Message):
 # ====================
 # RUN BOT
 # ====================
-if __name__ == "__main__":
+async def main():
+    # Set commands first
+    await set_bot_commands()
+    
+    # Start Flask in background
     threading.Thread(target=run_flask, daemon=True).start()
+    
+    # Scheduler start
     scheduler = BackgroundScheduler()
-    scheduler.add_job(send_daily_motivation, "cron", hour=5, minute=0, timezone="Asia/Kolkata")
+    scheduler.add_job(send_daily_quote_job, "cron", hour=7, minute=0, timezone="Asia/Kolkata")
     scheduler.start()
-    print("✅ Gemini AI Bot Started with MongoDB + Motivation System + Auto Commands...")
-    app.run()    
+
+    print("✅ Gemini AI Bot Started with MongoDB + Clone + Motivation System...")
+    # Start the bot
+    await app.start()
+    print("Bot is now running...")
+    await app.idle()  # Keeps bot running until Ctrl+C
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
