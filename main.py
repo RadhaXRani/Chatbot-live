@@ -49,6 +49,12 @@ def home():
 def run_flask():
     flask_app.run(host="0.0.0.0", port=PORT)
 
+
+def send_daily_quote_job():
+    loop = asyncio.get_event_loop()
+    quote = fetch_motivation_text()
+    loop.create_task(app.send_message(OWNER_ID, f"🌅 Good Morning!\n\n{quote}"))
+
 # ====================
 # DAILY MOTIVATION FUNCTION
 # ====================
