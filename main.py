@@ -450,15 +450,14 @@ async def main():
 
     # Start scheduler
     scheduler = BackgroundScheduler()
-    scheduler.add_job(send_daily_quote_job, "cron", hour=7, minute=0, timezone="Asia/Kolkata")
+    scheduler.add_job(send_daily_motivation, "cron", hour=7, minute=0, timezone="Asia/Kolkata")
     scheduler.start()
 
-    print("✅ Gemini AI Bot Started with MongoDB + Clone + Motivation System...")
+    print("✅ Gemini AI Bot Started with MongoDB + Motivation System...")
 
     # Keep bot running
-    await app.idle()
-
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    try:
+        while True:
+            await asyncio.sleep(3600)
+    except KeyboardInterrupt:
+        await app.stop()
