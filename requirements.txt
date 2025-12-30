@@ -3,3 +3,4 @@ TgCrypto==1.2.5
 Flask==3.0.3
 pymongo==4.7.2
 apscheduler
+requests
