@@ -11,6 +11,7 @@ import threading
 import requests
 from pyrogram.types import BotCommand
 
+
 # ====================
 # CONFIG (Set your own)
 # ====================
@@ -419,45 +420,68 @@ async def delete_motivation_time(client: Client, message: Message):
 # RUN BOT
 # ====================
 
-#from pyrogram.types import BotCommand
+# ====================
+# RUN BOT (FINAL FIXED)
+# ====================
 
+
+# --------------------
+# SET BOT COMMANDS
+# --------------------
 async def set_bot_commands():
-    user_commands = [
+    await app.set_bot_commands([
         BotCommand("start", "👋 Start & Register"),
-    ]
-    admin_commands = [
         BotCommand("ban", "⛔ Ban a User [ADMIN]"),
         BotCommand("unban", "✅ Unban a User [ADMIN]"),
-        BotCommand("broadcast", "📢 Broadcast a Message [ADMIN]"),
-        BotCommand("stats", "📊 Get Detailed User Stats [ADMIN]"),
-        BotCommand("setwelcome", "👋 Set Welcome Message [ADMIN]"),
-        BotCommand("delwelcome", "🗑️ Delete Welcome Message [ADMIN]"),
-        BotCommand("reply", "✉️ Reply To User [ADMIN]")
-    ]
-    await app.set_bot_commands(user_commands + admin_commands)
+        BotCommand("broadcast", "📢 Broadcast Message [ADMIN]"),
+        BotCommand("stats", "📊 User Stats [ADMIN]"),
+        BotCommand("setwelcome", "👋 Set Welcome [ADMIN]"),
+        BotCommand("delwelcome", "🗑️ Delete Welcome [ADMIN]"),
+        BotCommand("setmotivation", "⏰ Set Daily Motivation [ADMIN]"),
+        BotCommand("delmotivation", "❌ Delete Motivation [ADMIN]")
+    ])
 
 
+# --------------------
+# MAIN FUNCTION
+# --------------------
 async def main():
-    # Bot start
+    # Start bot
     await app.start()
 
-    # Set commands
+    # Set bot commands (ONE TIME)
     await set_bot_commands()
 
-    # Start Flask in thread
-    import threading
+    # Start Flask server in background
     threading.Thread(target=run_flask, daemon=True).start()
 
-    # Start scheduler
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(send_daily_motivation, "cron", hour=7, minute=0, timezone="Asia/Kolkata")
+    # Start Scheduler
+    scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
+
+    # Default daily motivation at 7:00 AM
+    scheduler.add_job(
+        send_daily_motivation,
+        "cron",
+        hour=7,
+        minute=0
+    )
+
     scheduler.start()
 
-    print("✅ Gemini AI Bot Started with MongoDB + Motivation System...")
+    print("✅ Gemini AI Bot Started Successfully")
 
-    # Keep bot running
+    # Keep bot alive forever
     try:
         while True:
             await asyncio.sleep(3600)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
+        scheduler.shutdown()
         await app.stop()
+        print("🛑 Bot Stopped")
+
+
+# --------------------
+# ENTRY POINT
+# --------------------
+if __name__ == "__main__":
+    asyncio.run(main())
