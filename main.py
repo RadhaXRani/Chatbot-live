@@ -413,6 +413,8 @@ async def delete_motivation_time(client: Client, message: Message):
 # RUN BOT
 # ====================
 
+#from pyrogram.types import BotCommand
+
 async def set_bot_commands():
     user_commands = [
         BotCommand("start", "👋 Start & Register"),
@@ -428,19 +430,29 @@ async def set_bot_commands():
     ]
     await app.set_bot_commands(user_commands + admin_commands)
 
-if __name__ == "__main__":
-    import asyncio
 
-    # Set commands before running bot
-    asyncio.run(set_bot_commands())
+async def main():
+    # Bot start
+    await app.start()
 
-    # Flask background
+    # Set commands
+    await set_bot_commands()
+
+    # Start Flask in thread
+    import threading
     threading.Thread(target=run_flask, daemon=True).start()
 
-    # Scheduler
+    # Start scheduler
     scheduler = BackgroundScheduler()
     scheduler.add_job(send_daily_quote_job, "cron", hour=7, minute=0, timezone="Asia/Kolkata")
     scheduler.start()
 
     print("✅ Gemini AI Bot Started with MongoDB + Clone + Motivation System...")
-    app.run()
+
+    # Keep bot running
+    await app.idle()
+
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
