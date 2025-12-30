@@ -9,11 +9,9 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from apscheduler.schedulers.background import BackgroundScheduler
 import threading
 import requests
-from pyrogram.types import BotCommand
-
 
 # ====================
-# CONFIG (Set your own)
+# CONFIG
 # ====================
 from config import API_ID, API_HASH, BOT_TOKEN, OWNER_ID, PORT, MONGO_URI
 
@@ -26,7 +24,7 @@ db = client_db["gemini_bot_db"]
 memory_col = db["memory"]
 user_profiles_col = db["user_profiles"]
 welcome_col = db["welcome_config"]
-motivation_time_col = db["motivation_time"]
+
 # ====================
 # BOT CLIENT
 # ====================
@@ -49,51 +47,30 @@ def home():
 
 def run_flask():
     flask_app.run(host="0.0.0.0", port=PORT)
-
-
-def send_daily_quote_job():
-    loop = asyncio.get_event_loop()
-    quote = fetch_motivation_text()
-    loop.create_task(app.send_message(OWNER_ID, f"🌅 Good Morning!\n\n{quote}"))
-
+    
+    
 # ====================
 # DAILY MOTIVATION FUNCTION
 # ====================
 def fetch_motivation_text():
-    """Fetch motivational text from free API or fallback"""
-    try:
-        r = requests.get("https://zenquotes.io/api/today")
-        if r.status_code == 200:
-            data = r.json()
-            return data[0]["q"] + " – " + data[0]["a"]
-    except:
-        pass
-    # Fallback text
+    """Random motivational text"""
     fallback_quotes = [
-        "सपने बड़े देखो और हिम्मत रखो। – Norman Vaughan",
+        "Dream big and dare to fail. – Norman Vaughan",
         "Be the change that you wish to see in the world. – Mahatma Gandhi",
-        "हर दिन छोटे कदम बढ़ाओ। – Anonymous",
+        "Small steps every day. – Anonymous",
         "Your limitation—it’s only your imagination.",
         "Push yourself, because no one else is going to do it for you."
     ]
     return random.choice(fallback_quotes)
 
 def fetch_motivation_image():
-    """Fetch a random motivational image from Unsplash free API or fallback"""
-    try:
-        r = requests.get("https://source.unsplash.com/800x600/?motivation,inspiration")
-        if r.status_code == 200:
-            return r.url
-    except:
-        pass
-    # fallback static image
+    """Static fallback image"""
     return "https://i.ibb.co/MkHGvrhL/photo-2025-08-15-12-04-59-7555109221855920164.jpg"
 
 def send_daily_motivation():
     users = user_profiles_col.find()
     text = fetch_motivation_text()
     image_url = fetch_motivation_image()
-
     loop = asyncio.get_event_loop()
     for user in users:
         user_id = user["user_id"]
@@ -104,7 +81,7 @@ def send_daily_motivation():
             )
         except:
             continue
-
+            
 # ====================
 # /ban → Ban user
 # ====================
@@ -112,7 +89,6 @@ def send_daily_motivation():
 async def ban_user(client: Client, message: Message):
     if len(message.command) < 2:
         return await message.reply("Usage: /ban <user_id>")
-
     try:
         user_id = int(message.command[1])
         user_profiles_col.update_one(
@@ -131,7 +107,6 @@ async def ban_user(client: Client, message: Message):
 async def unban_user(client: Client, message: Message):
     if len(message.command) < 2:
         return await message.reply("Usage: /unban <user_id>")
-
     try:
         user_id = int(message.command[1])
         user_profiles_col.update_one(
@@ -141,7 +116,8 @@ async def unban_user(client: Client, message: Message):
         await message.reply(f"✅ User {user_id} has been unbanned!")
     except ValueError:
         await message.reply("⚠️ Invalid user ID.")
-
+        
+                        
 # ====================
 # /setwelcome → Set Welcome
 # ====================
@@ -150,9 +126,8 @@ async def set_welcome(client: Client, message: Message):
     if not message.reply_to_message:
         return await message.reply(
             "⚠️ Reply to a photo/text to set welcome.\n"
-            "Optional: `btn=Text1|URL1,Text2|URL2` or JSON format `btn=[{{'text':'T','url':'U'}}]`"
+            "Optional: `btn=Text1|URL1,Text2|URL2` or JSON format `btn=[{'text':'T','url':'U'}]`"
         )
-
     file_id = message.reply_to_message.photo.file_id if message.reply_to_message.photo else None
     caption = message.reply_to_message.caption or message.reply_to_message.text or "👋 Welcome!"
     buttons = []
@@ -178,8 +153,7 @@ async def set_welcome(client: Client, message: Message):
         upsert=True
     )
     await message.reply("✅ Welcome message set successfully!")
-    
-    
+
 # ====================
 # /delwelcome → Delete Welcome
 # ====================
@@ -190,7 +164,8 @@ async def del_welcome(client: Client, message: Message):
         await message.reply("🗑️ Welcome message deleted. Default message will show now.")
     else:
         await message.reply("⚠️ No welcome message was set previously.")
-
+        
+                                                                
 # ====================
 # /start → Show Welcome + register user
 # ====================
@@ -222,8 +197,9 @@ async def start_cmd(client: Client, message: Message):
     else:
         default_photo = "https://i.ibb.co/MkHGvrhL/photo-2025-08-15-12-04-59-7555109221855920164.jpg"
         default_buttons = [[InlineKeyboardButton("Smile Plz 🫰🏻", url="https://t.me/Dream_Job_soon")]]
-        default_caption = f" Welcome {user.first_name} ❤️\nAsk your questions or doubts, I will reply soon!"
-        await client.send_photo(message.chat.id, photo=default_photo, caption=default_caption, reply_markup=InlineKeyboardMarkup(default_buttons))
+        default_caption = f"👋 Welcome {user.first_name} ❤️\nAsk your questions or doubts, I will reply soon!"
+        await client.send_photo(message.chat.id, photo=default_photo, caption=default_caption,
+                                reply_markup=InlineKeyboardMarkup(default_buttons))
 
 # ====================
 # FORWARD USER → ADMIN + CONFIRMATION
@@ -247,6 +223,7 @@ async def forward_user_msg(client: Client, message: Message):
         "timestamp": datetime.utcnow()
     })
 
+    # Forward message to admin
     fwd = await message.forward(OWNER_ID)
     info_text = (
         f"📩 New Message\n"
@@ -256,10 +233,14 @@ async def forward_user_msg(client: Client, message: Message):
         f"💬 Message: {message.text if message.text else '<media>'}"
     )
     await fwd.reply_text(info_text)
+
+    # Confirmation to user
     conf_msg = await message.reply_text("✅ Your message has been successfully sent!")
     await asyncio.sleep(2)
-    try: await conf_msg.delete()
-    except: pass
+    try:
+        await conf_msg.delete()
+    except:
+        pass
 
 # ====================
 # ADMIN REPLY → USER
@@ -270,7 +251,8 @@ async def reply_to_user(client: Client, message: Message):
         reply_to = message.reply_to_message
         import re
         match = re.search(r'ID: (\d+)', reply_to.text)
-        if not match: return await message.reply_text("⚠️ User ID not found!")
+        if not match:
+            return await message.reply_text("⚠️ User ID not found!")
         user_id = int(match.group(1))
 
         memory_col.insert_one({
@@ -278,11 +260,11 @@ async def reply_to_user(client: Client, message: Message):
             "admin_reply": message.text or "<text only>",
             "timestamp": datetime.utcnow()
         })
-        if message.text: await client.send_message(user_id, message.text)
+        if message.text:
+            await client.send_message(user_id, message.text)
         await message.reply_text("✅ Reply delivered.")
     except Exception as e:
-        await message.reply_text(f"Error: {e}")
-
+        await message.reply_text(f"Error: {e}")                                                                                                                                                                                
 # ====================
 # BROADCAST
 # ====================
@@ -290,9 +272,11 @@ async def reply_to_user(client: Client, message: Message):
 async def broadcast_cmd(client: Client, message: Message):
     if len(message.command) < 2:
         return await message.reply_text("Usage: /broadcast Your message here")
+
     text = message.text.split(" ", 1)[1]
     users = user_profiles_col.find()
     sent, failed = 0, 0
+
     for user in users:
         try:
             await client.send_message(user["user_id"], text)
@@ -300,6 +284,7 @@ async def broadcast_cmd(client: Client, message: Message):
         except:
             failed += 1
         await asyncio.sleep(0.05)
+
     await message.reply_text(f"📢 Broadcast sent to {sent} users, failed: {failed}")
 
 # ====================
@@ -309,179 +294,38 @@ async def broadcast_cmd(client: Client, message: Message):
 async def stats_cmd(client: Client, message: Message):
     total_users = user_profiles_col.count_documents({})
     text = f"📊 Total users: {total_users}\n\n"
+
     users = user_profiles_col.find().sort("joined_at", -1)
     all_lines = []
     for u in users:
         user_id = u.get("user_id")
         fname = u.get("first_name", "")
         lname = u.get("last_name", "")
-        uname = f"@{u['username']}" if u.get("username") else f"[Link](tg://user?id={user_id})"
+        uname = f"@{u['username']}" if u.get("username") else f"Link"
         joined = u.get("joined_at", "")
         line = f"👤 {fname} {lname}\n🆔 {user_id}\n🔗 {uname}\n📅 {joined}\n"
         all_lines.append(line)
+
     chunk = ""
     for line in all_lines:
         if len(chunk) + len(line) > 4000:
             await message.reply_text(chunk, disable_web_page_preview=True)
             chunk = ""
         chunk += line + "\n"
-    if chunk: await message.reply_text(chunk, disable_web_page_preview=True)    
-    
-
-# ====================
-# DAILY MOTIVATION FUNCTIONS
-# ====================
-def fetch_motivation_text():
-    try:
-        r = requests.get("https://zenquotes.io/api/today")
-        if r.status_code == 200:
-            data = r.json()
-            return data[0]["q"] + " – " + data[0]["a"]
-    except:
-        pass
-    fallback_quotes = [
-        "सपने बड़े देखो और असफल होने से डरो मत। – Norman Vaughan\nDream big and dare to fail.",
-        "वो बदलाव बनो जो आप दुनिया में देखना चाहते हैं। – Mahatma Gandhi\nBe the change that you wish to see in the world.",
-        "हर दिन छोटे कदम उठाओ। – Anonymous\nSmall steps every day.",
-        "आपकी सीमा सिर्फ आपकी कल्पना है।\nYour limitation—it’s only your imagination.",
-        "खुद को आगे बढ़ाओ, क्योंकि कोई और आपके लिए यह नहीं करेगा।\nPush yourself, because no one else is going to do it for you."
-    ]
-    return random.choice(fallback_quotes)
-
-def fetch_motivation_image():
-    try:
-        r = requests.get("https://source.unsplash.com/800x600/?motivation,inspiration")
-        if r.status_code == 200:
-            return r.url
-    except:
-        pass
-    return "https://i.ibb.co/MkHGvrhL/photo-2025-08-15-12-04-59-7555109221855920164.jpg"
-
-def send_daily_motivation():
-    users = user_profiles_col.find()
-    text = fetch_motivation_text()
-    image_url = fetch_motivation_image()
-    loop = asyncio.get_event_loop()
-    for user in users:
-        user_id = user["user_id"]
-        try:
-            asyncio.run_coroutine_threadsafe(
-                app.send_photo(user_id, photo=image_url, caption=f"🌅 Daily Motivation 🌟\n\n{text}"),
-                loop
-            )
-        except:
-            continue
-
-
-# ====================
-# /setmotivation → Set time for daily motivation
-# ====================
-@app.on_message(filters.command("setmotivation") & filters.user(OWNER_ID))
-async def set_motivation_time(client: Client, message: Message):
-    if len(message.command) < 2:
-        return await message.reply("Usage: /setmotivation HH:MM (24-hour format)")
-
-    try:
-        time_str = message.command[1]
-        hour, minute = map(int, time_str.split(":"))
-        if not (0 <= hour <= 23 and 0 <= minute <= 59):
-            return await message.reply("⚠️ Invalid time format!")
-
-        # Save in DB
-        motivation_time_col.update_one(
-            {"_id": "daily_motivation"},
-            {"$set": {"hour": hour, "minute": minute}},
-            upsert=True
-        )
-
-        # Remove existing job if exists
-        scheduler.remove_all_jobs()
-        # Add new job
-        scheduler.add_job(send_daily_motivation, "cron", hour=hour, minute=minute, timezone="Asia/Kolkata")
-
-        await message.reply(f"✅ Daily motivation time set to {hour:02d}:{minute:02d} IST")
-    except:
-        await message.reply("⚠️ Something went wrong. Use HH:MM format.")
-
-# ====================
-# /delmotivation → Delete scheduled daily motivation
-# ====================
-@app.on_message(filters.command("delmotivation") & filters.user(OWNER_ID))
-async def delete_motivation_time(client: Client, message: Message):
-    result = motivation_time_col.delete_one({"_id": "daily_motivation"})
-    scheduler.remove_all_jobs()
-    if result.deleted_count:
-        await message.reply("🗑️ Daily motivation schedule deleted!")
-    else:
-        await message.reply("⚠️ No daily motivation schedule was set.")
-
+    if chunk:
+        await message.reply_text(chunk, disable_web_page_preview=True)
 
 # ====================
 # RUN BOT
 # ====================
-
-# ====================
-# RUN BOT (FINAL FIXED)
-# ====================
-
-
-# --------------------
-# SET BOT COMMANDS
-# --------------------
-async def set_bot_commands():
-    await app.set_bot_commands([
-        BotCommand("start", "👋 Start & Register"),
-        BotCommand("ban", "⛔ Ban a User [ADMIN]"),
-        BotCommand("unban", "✅ Unban a User [ADMIN]"),
-        BotCommand("broadcast", "📢 Broadcast Message [ADMIN]"),
-        BotCommand("stats", "📊 User Stats [ADMIN]"),
-        BotCommand("setwelcome", "👋 Set Welcome [ADMIN]"),
-        BotCommand("delwelcome", "🗑️ Delete Welcome [ADMIN]"),
-        BotCommand("setmotivation", "⏰ Set Daily Motivation [ADMIN]"),
-        BotCommand("delmotivation", "❌ Delete Motivation [ADMIN]")
-    ])
-
-
-# --------------------
-# MAIN FUNCTION
-# --------------------
-async def main():
-    # Start bot
-    await app.start()
-
-    # Set bot commands (ONE TIME)
-    await set_bot_commands()
-
-    # Start Flask server in background
+if __name__ == "__main__":
+    # Flask background
     threading.Thread(target=run_flask, daemon=True).start()
 
-    # Start Scheduler
-    scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
-
-    # Default daily motivation at 7:00 AM
-    scheduler.add_job(
-        send_daily_motivation,
-        "cron",
-        hour=7,
-        minute=0
-    )
-
+    # Scheduler
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(send_daily_motivation, "cron", hour=5, minute=0, timezone="Asia/Kolkata")
     scheduler.start()
 
-    print("✅ Gemini AI Bot Started Successfully")
-
-    # Keep bot alive forever
-    try:
-        while True:
-            await asyncio.sleep(3600)
-    except (KeyboardInterrupt, SystemExit):
-        scheduler.shutdown()
-        await app.stop()
-        print("🛑 Bot Stopped")
-
-
-# --------------------
-# ENTRY POINT
-# --------------------
-if __name__ == "__main__":
-    asyncio.run(main())
+    print("✅ Gemini AI Bot Started with MongoDB + Motivation System...")
+    app.run()                         
